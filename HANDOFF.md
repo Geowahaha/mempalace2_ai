@@ -104,6 +104,137 @@ mempalace2_ai/
 └── requirements.txt
 ```
 
+---
+
+## How It Works (Full Pipeline)
+
+The system runs as a **continuous pipeline** with 5 agents working together:
+
+```
+START
+  │
+  ▼
+┌─────────────────────────────────────────────┐
+│              BOOT SEQUENCE                   │
+│  Phase 1: Load config (symbols, risk, API)  │
+│  Phase 2: Init agents + register tools      │
+│  Phase 3: Start task manager                │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────────┐
+│            MARKET SCANNER (loop)             │
+│  Every 60s, for each symbol:                │
+│    1. Fetch OHLCV candlestick data          │
+│    2. Run 15+ technical indicators          │
+│    3. Check for 7 setup patterns            │
+│    4. If setup found → send to Analyst      │
+│                                              │
+│  Detects: EMA cross, RSI OB/OS, MACD shift, │
+│  Supertrend flip, BB squeeze, S/R test,     │
+│  full trend alignment                        │
+└──────────────────┬──────────────────────────┘
+                   │ setup found
+                   ▼
+┌─────────────────────────────────────────────┐
+│              ANALYST (deep dive)             │
+│  1. Multi-timeframe check (15m/1h/4h/1d)    │
+│  2. Find support/resistance levels          │
+│  3. Calculate ATR (volatility)              │
+│  4. Optimize Entry/TP1/TP2/TP3/SL           │
+│     using ensemble of 3 strategies:         │
+│     - ATR-based dynamic levels              │
+│     - Structure (support/resistance)        │
+│     - Fibonacci extensions                  │
+│  5. Score confidence (0-100%)               │
+│  6. Generate TradeSignal → send to Risk Mgr │
+└──────────────────┬──────────────────────────┘
+                   │ signal generated
+                   ▼
+┌─────────────────────────────────────────────┐
+│           RISK MANAGER (gatekeeper)          │
+│  Checks, in order:                          │
+│  ✗ R:R < 2:1 → REJECT                      │
+│  ✗ Portfolio heat > 6% → REJECT             │
+│  ✗ Max 5 open trades → REJECT               │
+│  ✗ Daily loss ≥ 3% → REJECT (circuit break) │
+│  ✓ Pass all → calculate position size:      │
+│      Kelly Criterion (25% fractional)       │
+│  ✓ Approved → send to Executor              │
+└──────────────────┬──────────────────────────┘
+                   │ approved
+                   ▼
+┌─────────────────────────────────────────────┐
+│            EXECUTOR (manage trade)           │
+│  1. Place order (entry price)               │
+│  2. Update portfolio state                  │
+│  3. Start monitoring loop (every 5s):       │
+│     - Check if SL hit → close, log loss     │
+│     - Check if TP1 hit → move SL to B/E     │
+│     - Check if TP2 hit → trail stop         │
+│     - Check if TP3 hit → close, log profit  │
+│  4. Update trailing stop (2× ATR)           │
+│  5. Track P&L, win rate, drawdown           │
+└──────────────────┬──────────────────────────┘
+                   │
+                   ▼
+              POSITION CLOSED
+              Update portfolio stats
+              Return to Scanner loop
+```
+
+### Concrete Example: XAUUSD Long Trade
+
+```
+Scanner detects: "Supertrend flipped bullish, RSI at 28 (oversold)"
+                          │
+                          ▼
+Analyst says: "4H and 1D also bullish. Entry=3200, ATR=18"
+  Ensemble optimizer picks Structure strategy:
+    Entry:  3200.00
+    SL:     3194.50  (below support, 1.5 ATR)
+    TP1:    3218.00  (2.0 R, next resistance)
+    TP2:    3236.00  (3.5 R)
+    TP3:    3272.00  (5.0 R)
+  Confidence: 78%
+                          │
+                          ▼
+Risk Manager: "R:R = 3.27 ✓ | Kelly says 3.2% position ✓ | 
+               Portfolio heat = 2.1% (< 6%) ✓ | Open trades = 2 (< 5) ✓"
+  → APPROVED, size = $320 (3.2% of $10,000)
+                          │
+                          ▼
+Executor: "Buy 0.10 lots XAUUSD @ 3200.00"
+  Monitor:
+    Price hits 3218 → TP1 hit, SL moves to 3200 (breakeven)
+    Price hits 3236 → TP2 hit, trailing stop starts
+    Price hits 3272 → TP3 hit, CLOSE
+  Result: +$72 (+2.25% on position)
+```
+
+### What You See When Running
+
+```
+15:00:00 │ mempalace2.boot              │ INFO  │ ════════════════════════════════
+15:00:00 │ mempalace2.boot              │ INFO  │   MEMPALACE2 AI — BOOT SEQUENCE
+15:00:00 │ mempalace2.boot              │ INFO  │ ════════════════════════════════
+15:00:00 │ mempalace2.boot              │ INFO  │   ✓ Phase 1: Config loaded (12ms)
+15:00:01 │ mempalace2.boot              │ INFO  │   ✓ Phase 2: Agents & Tools ready (340ms)
+15:00:01 │ mempalace2.boot              │ INFO  │   ✓ Phase 3: Task system active (5ms)
+15:00:01 │ mempalace2.boot              │ INFO  │   BOOT COMPLETE — 357ms
+15:00:01 │ mempalace2.agents.scanner    │ INFO  │ 🔍 XAUUSD: 2 setup(s) detected
+15:00:02 │ mempalace2.agents.analyst    │ INFO  │ 📊 Analyzing: XAUUSD long [supertrend_flip_bullish]
+15:00:03 │ mempalace2.agents.analyst    │ INFO  │ 📈 Signal: XAUUSD long Conf=78% R:R=3.3 Entry=3200
+15:00:03 │ mempalace2.agents.risk_mgr   │ INFO  │ 🛡️ Risk check: XAUUSD long R:R=3.27
+15:00:03 │ mempalace2.agents.risk_mgr   │ INFO  │ ✅ APPROVED: XAUUSD Size=3.2% R:R=3.27 EV=0.042
+15:00:04 │ mempalace2.agents.executor   │ INFO  │ ⚡ Executing: XAUUSD long Entry=3200 SL=3194.5
+15:00:04 │ mempalace2.agents.executor   │ INFO  │ ✅ Executed: XAUUSD Qty=0.10 Value=$320 Risk=1.1%
+15:05:12 │ mempalace2.agents.executor   │ INFO  │ 🎯 TP1 hit: XAUUSD long @ 3218.00 (+0.56%)
+15:05:12 │ mempalace2.agents.executor   │ INFO  │   → SL moved to breakeven: 3200.00
+```
+
+---
+
 ## What Works
 
 - ✅ Boot pipeline (3-phase)
