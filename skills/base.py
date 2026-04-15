@@ -188,16 +188,26 @@ class SkillEntry:
         score = 0.0
         total = 0
 
+        # Helper: normalize condition value to a list for `in` checks
+        def _as_list(val):
+            if isinstance(val, list):
+                return val
+            if isinstance(val, str):
+                return [v.strip() for v in val.split(",")]
+            return [val]
+
         # Symbol match
         if "symbols" in self.conditions:
             total += 1
-            if context.get("symbol") in self.conditions["symbols"]:
+            sym = context.get("symbol")
+            if sym and sym in _as_list(self.conditions["symbols"]):
                 score += 1.0
 
         # Timeframe match
         if "timeframes" in self.conditions:
             total += 1
-            if context.get("timeframe") in self.conditions["timeframes"]:
+            tf = context.get("timeframe")
+            if tf and tf in _as_list(self.conditions["timeframes"]):
                 score += 1.0
 
         # Direction match
@@ -209,13 +219,15 @@ class SkillEntry:
         # Setup type match
         if "setup_types" in self.conditions:
             total += 1
-            if context.get("setup_type") in self.conditions["setup_types"]:
+            st = context.get("setup_type")
+            if st and st in _as_list(self.conditions["setup_types"]):
                 score += 1.0
 
         # Market regime match
         if "market_regimes" in self.conditions:
             total += 1
-            if context.get("market_regime") in self.conditions["market_regimes"]:
+            mr = context.get("market_regime")
+            if mr and mr in _as_list(self.conditions["market_regimes"]):
                 score += 1.0
 
         if total == 0:
