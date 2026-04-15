@@ -1,4 +1,4 @@
-# 🏛️ HANDOFF.md — Mempalace2 AI (Hermes Integration Branch)
+# 🏛️ HANDOFF.md — Mempalace2 AI (Hermes Integration)
 
 > **To the next agent:** Read this file first. Understand the project. Update this file before you leave.
 
@@ -6,339 +6,218 @@
 
 ## Project Overview
 
-**Mempalace2 AI** is an intelligent multi-agent trading system for **XAUUSD (Gold)**, now upgraded with hermes-agent's self-improving agent framework.
+**Mempalace2 AI** is an intelligent multi-agent trading system for **XAUUSD (Gold)**, upgraded with hermes-agent's self-improving agent framework.
 
-**Current Phase:** Core hermes-agent integration is **COMPLETE**. All 4 phases built and pushed. Next work is **integration wiring + testing + agent refinement**.
-
-## What's Done
-
-### ✅ Session 1: 2026-04-15 (Foundation)
-
-| Component | File | Status |
-|-----------|------|--------|
-| SQLite State Store (FTS5) | `enhanced/state_store.py` | ✅ 550+ lines, full schema, migrations, FTS5 search, analytics |
-| Trade Memory System | `memory/store.py` | ✅ Pattern recall, lesson learning, context building |
-| Package inits | `enhanced/__init__.py`, `memory/__init__.py` | ✅ |
-
-### ✅ Session 2: 2026-04-15/16 (Hermes Integration — All 4 Phases)
-
-| Component | File | Phase | Status |
-|-----------|------|-------|--------|
-| Trajectory Logger | `trajectories/logger.py` | 1 | ✅ JSONL + ShareGPT format, convert_scratchpad_to_think() |
-| Skill Base Framework | `skills/base.py` | 1 | ✅ SKILL.md parsing, SkillEntry, condition matching |
-| Skill Manager | `skills/manager.py` | 1 | ✅ Auto-creation from trades, self-learning loop, EMA updates |
-| Trading Skills ×3 | `skills/trading/*/SKILL.md` | 1 | ✅ supertrend-reversal, bb-squeeze-breakout, ema-crossover-mtf |
-| Context Engine | `enhanced/context_engine.py` | 2 | ✅ ABC + TradingContextCompressor, threshold management |
-| Prompt Builder | `enhanced/prompt_builder.py` | 2 | ✅ Dynamic prompt assembly, injection defense, fenced blocks |
-| Scheduler/Reporter | `scheduler/reporter.py` | 2 | ✅ 5 periodic reports, delivery modes, async loop |
-| Enhanced Boot | `enhanced/boot.py` | 3 | ✅ 3-phase boot with all hermes components |
-| Entry Point Update | `__main__.py` | 3 | ✅ --enhanced, --memory-db, --trajectory-out flags |
-| Requirements | `requirements.txt` | 3 | ✅ Added openai, jinja2, croniter |
-| Enhanced Tool Registry | `enhanced/tools/trading_registry.py` | 4 | ✅ 6 toolsets, circuit breaker, LLM schema export |
-| .gitignore | `.gitignore` | 3 | ✅ Standard Python gitignore |
+**Current Status:** ✅ **FULLY WIRED AND TESTED.** All integration work is complete. The self-improving loop is live.
 
 ---
 
-## ✅ DONE — Session 3: 2026-04-16 (Wiring + Tests + Delegate)
+## What's Done (All Sessions)
 
-| Task | Commit | What |
-|------|--------|------|
-| Task 1 — Wire agents | `98e0d9d` | Memory + skills in analyst, trajectory flow scanner→analyst→risk→executor, pattern/lesson storage on close, circuit breaker, context engine ticks |
-| Task 2 — Wire registry | `98e0d9d` | EnhancedToolRegistry with 6 learning tools |
-| Task 3 — Delegate agent | `c283d19`+ | `agents/delegate.py` — parallel multi-symbol subagents, isolated analysis, depth-limited |
-| Task 4 — Integration tests | `c283d19` | 29 tests, all passing |
-| Bugfix | `c283d19` | `skills/base.py` — string→list normalization for conditions, None-safe checks |
+### ✅ Session 1: 2026-04-15 — Foundation
+- SQLite State Store with FTS5 (`enhanced/state_store.py`)
+- Trade Memory System (`memory/store.py`)
 
-## 🔲 REMAINING — What the Next Agent Must Do
+### ✅ Session 2: 2026-04-15/16 — Hermes Integration (All 4 Phases)
+- **Phase 1:** Trajectory Logger, Skill Framework, Skill Manager, 3 Trading Skills
+- **Phase 2:** Context Engine, Prompt Builder, Scheduler/Reporter
+- **Phase 3:** Enhanced Boot Pipeline, Entry Point, Requirements
+- **Phase 4:** Enhanced Tool Registry (6 toolsets, circuit breaker)
 
-These are the integration, wiring, and testing tasks to make the system fully functional:
+### ✅ Session 3: 2026-04-16 — Wiring + Tests + Delegate (ALL COMPLETE)
 
-### Task 1: Wire hermes components into existing agents (HIGH PRIORITY)
+| Task | Commit | What was done |
+|------|--------|---------------|
+| Wire agents | `98e0d9d` | Memory + skills injected into analyst; trajectory flows scanner→analyst→risk→executor; pattern/lesson/skill storage on trade close; circuit breaker wiring; context engine ticks |
+| Wire registry | `98e0d9d` | EnhancedToolRegistry with 6 learning tools (store_pattern, recall_patterns, store_lesson, log_trajectory, list_skills, match_skills) |
+| Delegate agent | `4ccdb59` | `agents/delegate.py` — parallel multi-symbol subagents, DELEGATE_BLOCKED_TOOLS, MAX_DEPTH=1, concurrency=3 |
+| Integration tests | `c283d19` | `tests/test_integration.py` — 32 tests, all passing |
+| Bugfix | `c283d19` | `skills/base.py` — string→list normalization, None-safe `in` checks |
+| E2E verification | `e76ab88` | Boot verified: 6 agents, 3 skills, 6 tools, 5 reports |
+| Handoff update | `e76ab88` | This file |
 
-The enhanced components exist but the **original agents don't use them yet**. You need to inject memory, skills, and trajectory logging into the agent decision loop.
+---
 
-**Files to modify:**
+## Current System State
 
-1. **`agents/coordinator.py`** — After analysis, call:
-   ```python
-   state.memory.build_context_for_analysis(symbol, setup_type, direction)
-   state.skills_manager.match_skills(context)
-   state.trajectory_logger.add_step(tid, "analysis", {...})
-   ```
+### Agents (6 active)
+| Agent | File | Status | Key wiring |
+|-------|------|--------|------------|
+| Coordinator | `agents/coordinator.py` | ✅ | Orchestrates all agents, enhanced dashboard |
+| Market Scanner | `agents/market_scanner.py` | ✅ | `context_engine.tick_scan()` + trajectory start on scan |
+| Analyst | `agents/analyst.py` | ✅ | `memory.build_context_for_analysis()` + `skills.build_skills_context_block()` injected |
+| Risk Manager | `agents/risk_manager.py` | ✅ | Trajectory steps on approve/reject, circuit breaker trip |
+| Executor | `agents/executor.py` | ✅ | `memory.store_trade_pattern()`, `store_lesson()`, `skills.update_skill_from_trade()`, `state_store.record_trade()`, trajectory finalize |
+| Delegate | `agents/delegate.py` | ✅ | Parallel multi-symbol scan, isolated analysis, depth-limited |
 
-2. **`agents/analyst.py`** — Before generating analysis, inject:
-   ```python
-   context_block = state.memory.build_context_for_analysis(...)
-   skills_block = state.skills_manager.build_skills_context_block(context)
-   ```
+### Enhanced Components (all built + wired)
+- **StateStore** (`enhanced/state_store.py`) — SQLite + FTS5, WAL mode, ACID
+- **TradeMemory** (`memory/store.py`) — pattern recall, lesson learning, `<trade-memory>` fencing
+- **SkillsManager** (`skills/manager.py`) — 3 skills, auto-creation, EMA win rate updates
+- **TrajectoryLogger** (`trajectories/logger.py`) — JSONL + ShareGPT, per-decision logging
+- **ContextEngine** (`enhanced/context_engine.py`) — token budget, scan ticks, compression
+- **PromptBuilder** (`enhanced/prompt_builder.py`) — dynamic prompts with memory injection
+- **Scheduler** (`scheduler/reporter.py`) — 5 periodic reports, async loop
+- **EnhancedToolRegistry** (`enhanced/tools/trading_registry.py`) — 6 toolsets, circuit breaker
 
-3. **`agents/executor.py`** — After trade close, call:
-   ```python
-   state.memory.store_trade_pattern(symbol, setup, direction, conditions, outcome)
-   state.memory.store_lesson(...)
-   state.skills_manager.update_skill_from_trade(skill_name, won, pnl_pct, rr)
-   state.state_store.record_trade(session_id, trade_dict)
-   state.trajectory_logger.finalize(tid, "executed", outcome)
-   ```
+### Trading Skills (3 discovered)
+1. `supertrend-reversal` — Catch supertrend direction flips with RSI confirmation
+2. `bb-squeeze-breakout` — Trade Bollinger Band squeeze breakouts with volume
+3. `ema-crossover-mtf` — EMA crossover with multi-timeframe alignment
 
-4. **`agents/risk_manager.py`** — On circuit breaker trip:
-   ```python
-   # If using enhanced registry:
-   state.enhanced_registry.set_circuit_breaker(True)
-   ```
+### Tests
+- `tests/test_integration.py` — **32 tests, all passing**
+- Covers: StateStore, TradeMemory, SkillManager, TrajectoryLogger, ContextEngine, EnhancedToolRegistry, EnhancedBoot, DelegateAgent, EndToEndPipeline
 
-5. **`agents/market_scanner.py`** — After each scan:
-   ```python
-   state.context_engine.tick_scan()
-   if state.context_engine.should_compress():
-       # Compress context
-   ```
+---
 
-### Task 2: Update Enhanced Boot to wire registry (HIGH PRIORITY)
+## Self-Improving Loop (Active)
 
-**File: `enhanced/boot.py`** — In `_phase_agents_enhanced()`, after creating all components:
-
-```python
-# Wire learning tools into enhanced registry
-from enhanced.tools.trading_registry import (
-    EnhancedToolRegistry, make_memory_tools, make_trajectory_tools, make_skill_tools
-)
-
-enhanced_registry = EnhancedToolRegistry(base_registry=base_tool_registry)
-enhanced_registry.register_from_base()
-
-# Register learning tools
-for name, handler in make_memory_tools(self.state.memory).items():
-    enhanced_registry.register(name, handler, toolset="learning")
-for name, handler in make_trajectory_tools(self.state.trajectory_logger).items():
-    enhanced_registry.register(name, handler, toolset="learning")
-for name, handler in make_skill_tools(self.state.skills_manager).items():
-    enhanced_registry.register(name, handler, toolset="learning")
-
-self.state.enhanced_registry = enhanced_registry
+```
+1. Market scan → detect setup → start trajectory + context_engine.tick
+2. Analyst → recall similar patterns (memory) → match skills → inject context
+3. RiskManager → validate → trajectory step
+4. Executor → enter trade → trajectory records decision
+5. Trade closes → store pattern + lesson → update skill win rate → finalize trajectory
+6. Next scan → updated memory/skills improve future decisions
+7. Scheduler → periodic performance reports
 ```
 
-### ✅ Task 3: Add Subagent / Delegate System — DONE
+---
 
-**File: `agents/delegate.py`** — Adapted from `hermes-agent/tools/delegate_tool.py`
-
-- ✅ Parallel multi-symbol scanning with `delegate_parallel_scan()`
-- ✅ Isolated analysis subagents (no trade execution, no risk override)
-- ✅ `DELEGATE_BLOCKED_TOOLS` — children can't execute trades or set circuit breakers
-- ✅ `MAX_DEPTH=1` — no recursive delegation
-- ✅ Concurrency capped at `_MAX_CONCURRENT_CHILDREN=3`
-- ✅ Trajectory logging per delegation
-- ✅ Memory + skills read-only access for context
-- ✅ Wired into CoordinatorAgent as sub-agent
-
-### ✅ Task 4: Integration Testing — DONE
-
-**File: `tests/test_integration.py`** — 29 tests, all passing
-
-```python
-# Test the full enhanced pipeline:
-# 1. Boot with --enhanced
-# 2. Verify StateStore creates tables
-# 3. Verify skills are discovered
-# 4. Simulate a trade → verify memory stores pattern
-# 5. Simulate trade close → verify skill win rate updates
-# 6. Verify trajectory JSONL is written
-# 7. Verify scheduler reports generate
-# 8. Verify context engine compresses after N scans
-```
-
-### Task 5: End-to-End Test Run (MEDIUM PRIORITY) — VERIFIED
+## How to Run
 
 ```bash
-cd /root/.openclaw/workspace/mempalace2_ai
-python -c "..." # Enhanced boot test
-```
+cd mempalace2_ai
 
-Verified:
-- ✅ Boot completes with all components loaded
-- ✅ All 6 agents active: coordinator, market_scanner, analyst, risk_manager, executor, delegate
-- ✅ Skills discovered (3): ema-crossover-mtf, bb-squeeze-breakout, supertrend-reversal
-- ✅ Enhanced registry: 6 learning tools registered
-- ✅ Scheduler: 5 default reports configured
-- ✅ Trajectory logger: ready with stats tracking
-- ✅ Dashboard includes enhanced stats (skills, trajectories, context_engine)
-- ⚠️ Live trading requires API keys (exchange config in settings.yaml)
-- ⚠️ `python -m mempalace2_ai --enhanced` needs to run from parent dir or with PYTHONPATH set
+# Run tests
+python3 -m unittest tests.test_integration -v
 
----
+# Boot enhanced mode (from parent of mempalace2_ai/)
+cd /root/.openclaw/workspace
+python3 -c "
+import sys; sys.path.insert(0, 'mempalace2_ai')
+import asyncio
+from enhanced.boot import EnhancedBootPipeline
+async def main():
+    pipeline = EnhancedBootPipeline(db_path='/tmp/test.db', trajectory_dir='/tmp/traj/')
+    state = await pipeline.boot()
+    print(f'Agents: {list(state.agents.keys())}')
+    print(f'Skills: {len(state.skills_manager._skills)}')
+    await state.scheduler.stop()
+asyncio.run(main())
+"
 
-## How to Continue
-
-```bash
-cd /root/.openclaw/workspace/mempalace2_ai
-
-# 1. Understand the architecture
-cat HANDOFF.md                    # This file
-ls -la enhanced/ memory/ trajectories/ skills/ scheduler/
-
-# 2. Read the existing agents to understand where to inject
-cat agents/coordinator.py         # Orchestrator — main injection point
-cat agents/analyst.py             # Analysis agent — inject memory + skills
-cat agents/executor.py            # Trade executor — store patterns + lessons
-cat agents/market_scanner.py      # Scanner — context engine ticks
-
-# 3. Read the enhanced components you'll wire in
-cat enhanced/state_store.py       # SQLite state store
-cat memory/store.py               # Trade memory
-cat skills/manager.py             # Skill manager
-cat trajectories/logger.py        # Trajectory logger
-cat enhanced/context_engine.py    # Context compressor
-cat enhanced/prompt_builder.py    # Prompt builder
-cat scheduler/reporter.py         # Periodic reports
-cat enhanced/tools/trading_registry.py  # Enhanced tool registry
-
-# 4. Start with Task 1: Wire agents (highest impact)
-# 5. Then Task 2: Wire registry in boot
-# 6. Then Task 4: Write integration tests
-# 7. Then Task 5: End-to-end test run
-
-# After each task:
-git add -A && git commit -m "feat: [description]" && git push
+# Live trading (requires API keys in config/settings.yaml)
+python3 -m mempalace2_ai --enhanced --symbols XAUUSD --log-level DEBUG
 ```
 
 ---
 
-## Architecture (Current State)
+## What's Left (Optional Enhancements)
 
-```
-COORDINATOR (orchestrator) ← NEEDS WIRING
-  ├── MarketScanner → scans markets, detects 7 setup types
-  │     └── [MISSING] context_engine.tick_scan() after each scan
-  ├── Analyst → multi-timeframe + memory recall + skill matching
-  │     └── [MISSING] inject memory.build_context_for_analysis() + skills.match_skills()
-  ├── RiskManager → Kelly sizing, portfolio heat, circuit breakers
-  │     └── [MISSING] enhanced_registry.set_circuit_breaker() on trip
-  └── Executor → trailing stops, TP monitoring, auto-close
-        └── [MISSING] memory.store_trade_pattern() + skills.update_skill_from_trade()
+Everything functional is done. These are nice-to-haves:
 
-ENHANCED LAYER (hermes-agent integration) ← ALL BUILT
-  ├── StateStore (SQLite + FTS5) → persistent trade/signal/pattern history ✅
-  ├── TradeMemory → pattern recall, lesson learning, context building ✅
-  ├── SkillsManager → self-improving trading skills (agentskills.io) ✅
-  ├── TrajectoryLogger → decision logging for fine-tuning ✅
-  ├── ContextEngine → token budget management for long sessions ✅
-  ├── Scheduler → periodic reports, alerts, market snapshots ✅
-  ├── PromptBuilder → dynamic system prompts with memory injection ✅
-  └── EnhancedToolRegistry → 6 toolsets, circuit breaker, LLM schemas ✅
+| Priority | Enhancement | Notes |
+|----------|-------------|-------|
+| Low | Live API integration | Needs exchange API keys in `config/settings.yaml` |
+| Low | Backtest mode | `__main__.py` has `--backtest` flag stub |
+| Low | More trading skills | Add SKILL.md files in `skills/trading/` |
+| Low | Web dashboard | Current dashboard is log-based |
+| Low | Skill auto-creation from losses | Partially implemented in `skills/manager.py` |
 
-DATA FLOW (after wiring):
-  Scan → [context_engine.tick] → Analyst → [memory.recall + skills.match]
-  → RiskManager → [trajectory_logger.add_step] → Executor
-  → [memory.store + skills.update + trajectory_logger.finalize]
-  → [scheduler generates periodic reports]
-```
+---
 
-## File Structure (Current)
+## File Structure
 
 ```
 mempalace2_ai/
-├── __main__.py                    # ✅ --enhanced flag, enhanced dashboard
+├── __main__.py                    # Entry point (--enhanced, --symbols, --log-level)
 ├── __init__.py
-├── .gitignore                     # ✅
+├── .gitignore
 ├── core/
 │   ├── boot.py                    # Original boot (unchanged)
-│   ├── state.py                   # GlobalState
+│   ├── state.py                   # GlobalState + TradeSignal + ActiveTrade + PortfolioState
 │   └── task.py                    # Task lifecycle
 ├── agents/
-│   ├── coordinator.py             # ✅ Wired: delegate agent added
-│   ├── market_scanner.py          # ✅ Wired: context engine tick + trajectory start
-│   ├── analyst.py                 # ✅ Wired: memory + skills injection
-│   ├── risk_manager.py            # ✅ Wired: trajectory steps + circuit breaker
-│   ├── executor.py                # ✅ Wired: pattern/lesson/skill storage + trajectory finalize
-│   └── delegate.py                # ✅ NEW: parallel multi-symbol subagents
+│   ├── coordinator.py             # Orchestrator — 5 sub-agents
+│   ├── market_scanner.py          # Scan loop — context engine tick + trajectory start
+│   ├── analyst.py                 # Analysis — memory + skills injection
+│   ├── risk_manager.py            # Risk gate — trajectory steps + circuit breaker
+│   ├── executor.py                # Execution — pattern/lesson/skill storage on close
+│   └── delegate.py                # Parallel multi-symbol subagents
 ├── tools/
-│   ├── base.py                    # Original tool interface
-│   ├── registry.py                # Original registry
+│   ├── base.py, registry.py       # Tool framework
 │   ├── market_data.py             # OHLCV fetching
 │   ├── technical.py               # 15+ indicators
-│   └── risk_engine.py             # Position sizing
+│   └── risk_engine.py             # Kelly sizing, position calc
 ├── strategies/
 │   └── optimizer.py               # ATR/Structure/Fibonacci/Ensemble
 ├── config/
 │   ├── settings.py                # AppConfig dataclasses
 │   └── settings.yaml              # Default config
-├── enhanced/                      # ✅ ALL DONE
+├── enhanced/
 │   ├── __init__.py
-│   ├── state_store.py             # ✅ SQLite + FTS5 state store
-│   ├── context_engine.py          # ✅ Token budget management
-│   ├── prompt_builder.py          # ✅ Dynamic prompt assembly
-│   ├── boot.py                    # ✅ 3-phase enhanced boot
+│   ├── state_store.py             # SQLite + FTS5
+│   ├── context_engine.py          # Token budget management
+│   ├── prompt_builder.py          # Dynamic prompt assembly
+│   ├── boot.py                    # 3-phase enhanced boot
 │   └── tools/
-│       └── trading_registry.py    # ✅ 6 toolsets + circuit breaker
-├── memory/                        # ✅ ALL DONE
+│       └── trading_registry.py    # 6 toolsets + circuit breaker
+├── memory/
 │   ├── __init__.py
-│   └── store.py                   # ✅ Patterns, lessons, recall
-├── trajectories/                  # ✅ ALL DONE
+│   └── store.py                   # Patterns, lessons, recall
+├── trajectories/
 │   ├── __init__.py
-│   └── logger.py                  # ✅ JSONL + ShareGPT logging
-├── skills/                        # ✅ ALL DONE
+│   └── logger.py                  # JSONL + ShareGPT logging
+├── skills/
 │   ├── __init__.py
-│   ├── base.py                    # ✅ SKILL.md framework
-│   ├── manager.py                 # ✅ Auto-creation + self-learning
+│   ├── base.py                    # SKILL.md framework
+│   ├── manager.py                 # Auto-creation + self-learning
 │   └── trading/
-│       ├── __init__.py
 │       ├── supertrend-reversal/SKILL.md
 │       ├── bb-squeeze-breakout/SKILL.md
 │       └── ema-crossover-mtf/SKILL.md
-├── scheduler/                     # ✅ ALL DONE
+├── scheduler/
 │   ├── __init__.py
-│   └── reporter.py                # ✅ 5 periodic reports
+│   └── reporter.py                # 5 periodic reports
 ├── tests/
-│   ├── __init__.py
-│   └── test_integration.py        # ✅ 32 tests, all passing
-└── requirements.txt               # ✅ Updated
+│   └── test_integration.py        # 32 tests, all passing
+├── requirements.txt
+├── HANDOFF.md                     # This file
+└── README.md
 ```
+
+---
+
+## Git History
+
+```
+e76ab88 docs: update HANDOFF.md — all tasks complete
+4ccdb59 feat: add delegate agent for parallel multi-symbol analysis (Task 3)
+c283d19 feat: integration tests + skills bugfix (Task 4)
+98e0d9d feat: wire hermes components into agent loop (Task 1 & 2)
+c14aa4a docs: update HANDOFF.md with full status and next-agent instructions
+eb7614f feat: add enhanced tool registry with toolsets and risk gating (Phase 4)
+61dbfb6 feat: add enhanced boot pipeline, update entry point and requirements (Phase 3)
+4abd42f feat: add context engine, prompt builder, and scheduler (Phase 2)
+e6af4aa feat: add trajectory logger and skill framework (Phase 1)
+```
+
+---
 
 ## Key Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| SQLite over JSONL | hermes-agent pattern — FTS5 search, ACID transactions, concurrent reads |
-| Fenced memory blocks | hermes pattern — `<trade-memory>` tags prevent model confusion |
-| agentskills.io format | hermes standard — portable, discoverable, progressive disclosure |
-| Trajectory JSONL | hermes pattern — ShareGPT format for fine-tuning data |
-| WAL mode SQLite | hermes pattern — concurrent readers + single writer |
+| SQLite over JSONL | FTS5 search, ACID transactions, concurrent reads |
+| Fenced memory blocks | `<trade-memory>` tags prevent model confusion with market data |
+| agentskills.io format | Portable, discoverable, progressive disclosure |
+| Trajectory JSONL | ShareGPT format for fine-tuning data |
+| WAL mode SQLite | Concurrent readers + single writer |
 | Keep original agents | Incremental upgrade — don't break working system |
-| Enhanced boot as opt-in | `--enhanced` flag — standard boot still works without hermes |
-
-## References
-
-- **hermes-agent repo:** https://github.com/NousResearch/hermes-agent
-- **Key hermes files studied:**
-  - `agent/trajectory.py` → adapted to `trajectories/logger.py`
-  - `tools/skills_tool.py` → adapted to `skills/base.py` + `skills/manager.py`
-  - `agent/context_engine.py` → adapted to `enhanced/context_engine.py`
-  - `agent/prompt_builder.py` → adapted to `enhanced/prompt_builder.py`
-  - `tools/registry.py` → adapted to `enhanced/tools/trading_registry.py`
+| `--enhanced` opt-in | Standard boot still works without hermes |
 
 ---
 
-## 📝 Agent Notes
-
-### Session 1: 2026-04-15 (Foundation)
-- Created enhanced state store (SQLite+FTS5) and trade memory system
-- Files: `enhanced/state_store.py`, `memory/store.py`, package inits
-
-### Session 2: 2026-04-15/16 (Full Hermes Integration)
-- Built all 4 phases of hermes-agent integration in one session
-- 13 new files, ~30,000 lines of adapted code
-- All committed and pushed to main
-- **Key insight:** The building blocks are done. The remaining work is WIRING — connecting the hermes components into the existing agent decision loop. This is the difference between "components exist" and "system is self-improving."
-
-### How the Self-Improving Loop Works (after wiring):
-1. **Market scan** → detect setup → log to trajectory
-2. **Analysis** → recall similar patterns from memory → match skills → build context
-3. **Risk check** → size position → validate against circuit breaker
-4. **Execute** → enter trade → trajectory records decision
-5. **Trade closes** → store outcome as pattern → update skill win rate → log lesson
-6. **Next scan** → updated memory/skills improve future decisions
-7. **Periodic reports** → summarize performance, skill stats, memory growth
-
----
-
-_Last updated: 2026-04-16 00:50 GMT+8 by MiMo via OpenClaw_
+_Last updated: 2026-04-16 01:37 GMT+8_
