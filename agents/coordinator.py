@@ -129,7 +129,7 @@ class CoordinatorAgent(BaseAgent):
         portfolio = self.state.portfolio
         risk_manager = self.sub_agents.get("risk_manager")
 
-        return {
+        dashboard = {
             "session_id": self.state.session_id,
             "uptime": str(datetime.now(timezone.utc) - self.state.start_time),
             "boot_time_ms": self.state.boot_metrics.total_boot_ms if self.state.boot_metrics else 0,
@@ -158,3 +158,18 @@ class CoordinatorAgent(BaseAgent):
             "task_stats": self.state.task_manager.get_stats() if self.state.task_manager else {},
             "symbols": self.state.config.symbols,
         }
+
+        # ── hermes: Enhanced component stats ──
+        if hasattr(self.state, 'skills_manager') and self.state.skills_manager:
+            dashboard["skills"] = {
+                "total": len(self.state.skills_manager._skills),
+                "active": sum(1 for s in self.state.skills_manager._skills.values() if s.is_active),
+            }
+        if hasattr(self.state, 'trajectory_logger') and self.state.trajectory_logger:
+            dashboard["trajectories"] = self.state.trajectory_logger._stats
+        if hasattr(self.state, 'context_engine') and self.state.context_engine:
+            dashboard["context_engine"] = {
+                "scan_count": getattr(self.state.context_engine, '_scan_count', 0),
+            }
+
+        return dashboard

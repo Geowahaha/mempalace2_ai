@@ -45,8 +45,9 @@ class ExecutorAgent(BaseAgent):
         if message.action == "execute":
             signal = message.data.get("signal")
             assessment = message.data.get("assessment")
+            trajectory_id = message.data.get("trajectory_id")
             if signal:
-                await self.execute_trade(signal, assessment)
+                await self.execute_trade(signal, assessment, trajectory_id=trajectory_id)
         elif message.action == "close_all":
             await self.close_all_positions()
         elif message.action == "start_monitor":
@@ -71,7 +72,7 @@ class ExecutorAgent(BaseAgent):
                 logger.error(f"Monitor error: {e}")
                 await asyncio.sleep(5)
 
-    async def execute_trade(self, signal: TradeSignal, assessment=None):
+    async def execute_trade(self, signal: TradeSignal, assessment=None, trajectory_id: str = None):
         """
         Execute an approved trade.
 
@@ -86,6 +87,16 @@ class ExecutorAgent(BaseAgent):
         )
 
         async def _do_execute():
+            # ── hermes: Trajectory step on execution ──
+            if trajectory_id and hasattr(self.state, 'trajectory_logger') and self.state.trajectory_logger:
+                self.state.trajectory_logger.add_step(trajectory_id, "execution", {
+                    "symbol": signal.symbol,
+                    "direction": signal.direction,
+                    "entry_price": signal.entry_price,
+                    "stop_loss": signal.stop_loss,
+                    "take_profit_1": signal.take_profit_1,
+                    "position_size_pct": signal.position_size_pct,
+                })
             logger.info(
                 f"⚡ Executing: {signal.symbol} {signal.direction} "
                 f"Entry={signal.entry_price:.2f} "
@@ -102,6 +113,7 @@ class ExecutorAgent(BaseAgent):
                 entry_filled_price=signal.entry_price,  # assume fill at signal price
                 entry_filled_time=datetime.now(timezone.utc),
                 quantity=quantity,
+                trajectory_id=trajectory_id or "",
             )
 
             # Update portfolio
@@ -236,12 +248,112 @@ class ExecutorAgent(BaseAgent):
         risk_pct = risk_amount / self.state.portfolio.total_equity * 100
         self.state.portfolio.total_risk_pct -= risk_pct
 
-        emoji = "✅" if realized_pnl > 0 else "❌"
+        won = realized_pnl > 0
+        rr_achieved = abs(realized_pnl / risk_amount) if risk_amount > 0 else 0.0
+
+        emoji = "✅" if won else "❌"
         logger.info(
             f"{emoji} CLOSED: {signal.symbol} {signal.direction} — {reason} "
             f"P&L=${realized_pnl:+.2f} ({pnl_pct:+.2f}%) "
             f"TPs hit: {trade.tp_hits}"
         )
+
+        # ── hermes: Store trade pattern in memory ──
+        if hasattr(self.state, 'memory') and self.state.memory:
+            self.state.memory.store_trade_pattern(
+                symbol=signal.symbol,
+                setup_type=signal.strategy,
+                direction=signal.direction,
+                conditions={
+                    "timeframe": signal.timeframe,
+                    "entry_price": signal.entry_price,
+                    "stop_loss": signal.stop_loss,
+                    "take_profit_1": signal.take_profit_1,
+                    "atr": signal.atr,
+                    "confidence": signal.confidence,
+                    "risk_reward_ratio": signal.risk_reward_ratio,
+                },
+                outcome={
+                    "pnl": realized_pnl,
+                    "pnl_pct": pnl_pct,
+                    "risk_reward_ratio": rr_achieved,
+                    "tps_hit": trade.tp_hits,
+                    "close_reason": reason,
+                },
+            )
+
+        # ── hermes: Store lesson on losses ──
+        if not won and hasattr(self.state, 'memory') and self.state.memory:
+            self.state.memory.store_lesson(
+                event_type="loss",
+                trade_id=signal.id,
+                description=f"{signal.symbol} {signal.direction} {signal.strategy}: {reason}",
+                lesson=f"Lost ${abs(realized_pnl):.2f} ({pnl_pct:+.2f}%) on {signal.strategy} — "
+                       f"entry {signal.entry_price:.2f}, SL {signal.stop_loss:.2f}",
+                metadata={
+                    "symbol": signal.symbol,
+                    "setup_type": signal.strategy,
+                    "direction": signal.direction,
+                    "pnl_pct": pnl_pct,
+                },
+            )
+
+        # ── hermes: Update skill win rate ──
+        if hasattr(self.state, 'skills_manager') and self.state.skills_manager:
+            # Map strategy to skill name
+            skill_name_map = {
+                "supertrend_flip_bullish": "supertrend-reversal",
+                "supertrend_flip_bearish": "supertrend-reversal",
+                "bb_squeeze_breakout": "bb-squeeze-breakout",
+                "ema_crossover": "ema-crossover-mtf",
+                "ema_crossover_bullish": "ema-crossover-mtf",
+                "ema_crossover_bearish": "ema-crossover-mtf",
+            }
+            skill_name = skill_name_map.get(signal.strategy, signal.strategy)
+            self.state.skills_manager.update_skill_from_trade(
+                skill_name=skill_name,
+                won=won,
+                pnl_pct=pnl_pct,
+                risk_reward=rr_achieved,
+            )
+
+        # ── hermes: Record trade in state store ──
+        if hasattr(self.state, 'state_store') and self.state.state_store:
+            self.state.state_store.record_trade(
+                session_id=getattr(self.state, 'state_store_session_id', self.state.session_id),
+                trade={
+                    "trade_id": signal.id,
+                    "symbol": signal.symbol,
+                    "direction": signal.direction,
+                    "setup_type": signal.strategy,
+                    "entry_price": signal.entry_price,
+                    "exit_price": price,
+                    "quantity": trade.quantity,
+                    "pnl": realized_pnl,
+                    "pnl_pct": pnl_pct,
+                    "close_reason": reason,
+                    "tps_hit": trade.tp_hits,
+                },
+            )
+
+        # ── hermes: Finalize trajectory ──
+        if trade.trajectory_id and hasattr(self.state, 'trajectory_logger') and self.state.trajectory_logger:
+            self.state.trajectory_logger.finalize(
+                trade.trajectory_id,
+                "closed" if won else "closed",
+                {
+                    "symbol": signal.symbol,
+                    "direction": signal.direction,
+                    "strategy": signal.strategy,
+                    "entry_price": signal.entry_price,
+                    "exit_price": price,
+                    "pnl": realized_pnl,
+                    "pnl_pct": pnl_pct,
+                    "tps_hit": trade.tp_hits,
+                    "close_reason": reason,
+                    "won": won,
+                },
+            )
 
     def _get_current_price(self, symbol: str) -> float:
         """Get current price from market data cache or last signal."""

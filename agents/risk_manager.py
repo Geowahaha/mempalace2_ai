@@ -41,10 +41,11 @@ class RiskManagerAgent(BaseAgent):
     async def handle_message(self, message: AgentMessage):
         if message.action == "validate":
             signal = message.data.get("signal")
+            trajectory_id = message.data.get("trajectory_id")
             if signal:
-                await self.validate_trade(signal)
+                await self.validate_trade(signal, trajectory_id=trajectory_id)
 
-    async def validate_trade(self, signal: TradeSignal) -> bool:
+    async def validate_trade(self, signal: TradeSignal, trajectory_id: str = None) -> bool:
         """
         Full risk validation pipeline.
 
@@ -106,13 +107,23 @@ class RiskManagerAgent(BaseAgent):
                     f"Heat={assessment.portfolio_heat_after:.1f}%"
                 )
 
-                # Forward to executor
+                # ── hermes: Trajectory step ──
+                if trajectory_id and hasattr(self.state, 'trajectory_logger') and self.state.trajectory_logger:
+                    self.state.trajectory_logger.add_step(trajectory_id, "risk_approved", {
+                        "position_size_pct": assessment.position_size_pct,
+                        "risk_reward_ratio": assessment.risk_reward_ratio,
+                        "expected_value": assessment.expected_value,
+                        "portfolio_heat": assessment.portfolio_heat_after,
+                    })
+
+                # Forward to executor (carry trajectory_id)
                 await self.send(
                     recipient="executor",
                     action="execute",
                     data={
                         "signal": signal,
                         "assessment": assessment,
+                        "trajectory_id": trajectory_id,
                     },
                     priority=int(signal.confidence),
                 )
@@ -127,6 +138,22 @@ class RiskManagerAgent(BaseAgent):
                 logger.info(
                     f"❌ REJECTED: {signal.symbol} {signal.direction} — {reason}"
                 )
+
+                # ── hermes: Finalize trajectory on rejection ──
+                if trajectory_id and hasattr(self.state, 'trajectory_logger') and self.state.trajectory_logger:
+                    self.state.trajectory_logger.add_step(trajectory_id, "risk_rejected", {
+                        "reason": reason,
+                    })
+                    self.state.trajectory_logger.finalize(trajectory_id, "rejected", {
+                        "reason": reason,
+                    })
+
+                # ── hermes: Circuit breaker on daily loss ──
+                if "daily_loss" in reason.lower() or "circuit" in reason.lower():
+                    if hasattr(self.state, 'enhanced_registry') and self.state.enhanced_registry:
+                        self.state.enhanced_registry.set_circuit_breaker(True)
+                        logger.warning("  Circuit breaker TRIPPED — enhanced registry disabled")
+
                 return False
 
         return await self.state.task_manager.run_task(task, _do_validation())

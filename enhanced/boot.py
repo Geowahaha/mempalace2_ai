@@ -154,8 +154,24 @@ class EnhancedBootPipeline(BootPipeline):
         )
         self.metrics.trajectory_logger_loaded_at = time.monotonic()
 
+        # ── Enhanced Tool Registry with learning tools ──
+        from enhanced.tools.trading_registry import (
+            EnhancedToolRegistry, make_memory_tools, make_trajectory_tools, make_skill_tools,
+        )
+
+        enhanced_registry = EnhancedToolRegistry()
+        # Register learning tools from memory, trajectories, and skills
+        for name, handler in make_memory_tools(self.state.memory).items():
+            enhanced_registry.register(name, handler, toolset="learning")
+        for name, handler in make_trajectory_tools(self.state.trajectory_logger).items():
+            enhanced_registry.register(name, handler, toolset="learning")
+        for name, handler in make_skill_tools(self.state.skills_manager).items():
+            enhanced_registry.register(name, handler, toolset="learning")
+        self.state.enhanced_registry = enhanced_registry
+
         logger.info(f"  Agents: {len(self.state.agents)} active")
         logger.info(f"  Tools:  {len(self.state.tools)} registered")
+        logger.info(f"  Enhanced tools: {len(enhanced_registry._tools)} registered")
 
     async def _phase_tasks_enhanced(self):
         """Phase 3: Scheduler + Task System + First Scan."""

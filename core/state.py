@@ -63,6 +63,7 @@ class ActiveTrade:
     realized_pnl: float = 0.0
     trailing_stop: float = 0.0
     tp_hits: List[int] = field(default_factory=list)  # which TPs have been hit
+    trajectory_id: str = ""  # hermes: linked trajectory for logging
 
 
 @dataclass

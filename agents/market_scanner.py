@@ -128,10 +128,33 @@ class MarketScannerAgent(BaseAgent):
             # 3. Detect setups
             setups = self._detect_setups(symbol, indicators, df)
 
+            # ── hermes: Context engine tick ──
+            if hasattr(self.state, 'context_engine') and self.state.context_engine:
+                self.state.context_engine.tick_scan()
+                if self.state.context_engine.should_compress():
+                    logger.info("  Context compression triggered after scan")
+
             if setups:
                 logger.info(f"🔍 {symbol}: {len(setups)} setup(s) detected")
                 # Forward best setup to Analyst
                 best = max(setups, key=lambda s: s["strength"])
+
+                # ── hermes: Start trajectory ──
+                trajectory_id = None
+                if hasattr(self.state, 'trajectory_logger') and self.state.trajectory_logger:
+                    trajectory_id = self.state.trajectory_logger.start_trajectory(
+                        session_id=getattr(self.state, 'state_store_session_id', self.state.session_id),
+                        symbol=symbol,
+                        direction=best["direction"],
+                    )
+                    self.state.trajectory_logger.add_step(trajectory_id, "scan", {
+                        "symbol": symbol,
+                        "setup_type": best["type"],
+                        "direction": best["direction"],
+                        "strength": best["strength"],
+                        "reasoning": best["reasoning"],
+                    })
+
                 await self.send(
                     recipient="analyst",
                     action="analyze",
@@ -140,6 +163,7 @@ class MarketScannerAgent(BaseAgent):
                         "setup": best,
                         "indicators": indicators,
                         "ohlcv": df,
+                        "trajectory_id": trajectory_id,
                     },
                     priority=int(best["strength"]),
                 )

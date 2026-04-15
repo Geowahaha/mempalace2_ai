@@ -54,16 +54,18 @@ class AnalystAgent(BaseAgent):
         setup: dict,
         indicators=None,
         ohlcv: pd.DataFrame = None,
+        trajectory_id: str = None,
     ):
         """
         Full analysis pipeline for a detected setup.
 
         Steps:
           1. Multi-timeframe confirmation
-          2. Optimal entry calculation
-          3. ATR-based TP/SL optimization
-          4. Confidence scoring
-          5. Forward to Risk Manager
+          2. Memory recall + skill matching (hermes integration)
+          3. Optimal entry calculation
+          4. ATR-based TP/SL optimization
+          5. Confidence scoring
+          6. Forward to Risk Manager
         """
         task = self.state.task_manager.create_task(
             task_type=TaskType.ANALYSIS,
@@ -77,6 +79,40 @@ class AnalystAgent(BaseAgent):
                 f"📊 Analyzing: {symbol} {setup['direction']} "
                 f"[{setup['type']}] strength={setup.get('strength', 0)}"
             )
+
+            # ── hermes: Memory recall ──
+            memory_block = ""
+            if hasattr(self.state, 'memory') and self.state.memory:
+                memory_block = self.state.memory.build_context_for_analysis(
+                    symbol=symbol,
+                    setup_type=setup.get("type", "unknown"),
+                    direction=setup.get("direction", "long"),
+                )
+                if memory_block:
+                    logger.debug(f"  Memory context: {len(memory_block)} chars")
+
+            # ── hermes: Skill matching ──
+            skills_block = ""
+            if hasattr(self.state, 'skills_manager') and self.state.skills_manager:
+                skill_context = {
+                    "symbol": symbol,
+                    "setup_type": setup.get("type", "unknown"),
+                    "direction": setup.get("direction", "long"),
+                    "strength": setup.get("strength", 0),
+                }
+                skills_block = self.state.skills_manager.build_skills_context_block(skill_context)
+                if skills_block:
+                    logger.debug(f"  Skills context: {len(skills_block)} chars")
+
+            # ── hermes: Trajectory step ──
+            if trajectory_id and hasattr(self.state, 'trajectory_logger') and self.state.trajectory_logger:
+                self.state.trajectory_logger.add_step(trajectory_id, "analysis", {
+                    "symbol": symbol,
+                    "setup_type": setup.get("type"),
+                    "direction": setup.get("direction"),
+                    "has_memory": bool(memory_block),
+                    "has_skills": bool(skills_block),
+                })
 
             # 1. Multi-timeframe confirmation
             mtf_score = await self._multi_timeframe_check(symbol, setup["direction"])
@@ -109,7 +145,21 @@ class AnalystAgent(BaseAgent):
             atr_bonus = min(10, atr / entry_price * 1000) if atr > 0 else 0  # ATR quality
             confidence = min(100, base_confidence * 0.5 + mtf_bonus + atr_bonus)
 
-            # 5. Build signal
+            # 5. Build signal (include memory + skills context)
+            full_reasoning = (
+                f"{setup['reasoning']}\n"
+                f"MTF confirmation: {mtf_score:.0f}/100\n"
+                f"Entry: {entry_price:.2f} | "
+                f"SL: {tpsl['stop_loss']:.2f} ({tpsl['risk_reward_1']:.1f}R)\n"
+                f"TP1: {tpsl['take_profit_1']:.2f} | "
+                f"TP2: {tpsl['take_profit_2']:.2f} | "
+                f"TP3: {tpsl['take_profit_3']:.2f}"
+            )
+            if memory_block:
+                full_reasoning += f"\n{memory_block}"
+            if skills_block:
+                full_reasoning += f"\n{skills_block}"
+
             signal = TradeSignal(
                 symbol=symbol,
                 timeframe=self.state.config.analysis.primary_timeframe,
@@ -122,15 +172,7 @@ class AnalystAgent(BaseAgent):
                 confidence=confidence,
                 risk_reward_ratio=tpsl["risk_reward_1"],
                 strategy=setup["type"],
-                reasoning=(
-                    f"{setup['reasoning']}\n"
-                    f"MTF confirmation: {mtf_score:.0f}/100\n"
-                    f"Entry: {entry_price:.2f} | "
-                    f"SL: {tpsl['stop_loss']:.2f} ({tpsl['risk_reward_1']:.1f}R)\n"
-                    f"TP1: {tpsl['take_profit_1']:.2f} | "
-                    f"TP2: {tpsl['take_profit_2']:.2f} | "
-                    f"TP3: {tpsl['take_profit_3']:.2f}"
-                ),
+                reasoning=full_reasoning,
                 atr=atr,
                 trend_strength=indicators.trend_score if indicators else 0,
                 volume_score=indicators.volume_ratio if indicators else 1,
@@ -149,11 +191,11 @@ class AnalystAgent(BaseAgent):
                 f"TP1={signal.take_profit_1:.2f}"
             )
 
-            # Forward to risk manager
+            # Forward to risk manager (carry trajectory_id through pipeline)
             await self.send(
                 recipient="risk_manager",
                 action="validate",
-                data={"signal": signal},
+                data={"signal": signal, "trajectory_id": trajectory_id},
                 priority=int(confidence),
             )
 
