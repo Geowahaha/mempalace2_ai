@@ -1,0 +1,57 @@
+symbols:
+  - XAUUSD
+  - XAGUSD
+  - EURUSD
+  - GBPUSD
+  - USDJPY
+
+exchanges:
+  primary: oanda  # Forex/Gold broker
+  sandbox: true
+  testnet: true
+  rate_limit: 10
+  # OANDA / MT5 / cTrader supported
+  api_key: ""  # set via EXCHANGE_API_KEY env var
+
+risk:
+  initial_capital: 10000
+  max_position_pct: 5.0
+  max_portfolio_risk_pct: 6.0
+  max_correlated_positions: 3
+  min_risk_reward: 2.0
+  max_daily_loss_pct: 3.0
+  max_drawdown_pct: 15.0
+  kelly_fraction: 0.25
+  atr_multiplier_sl: 1.5
+  atr_multiplier_tp: 3.0
+  trailing_stop_atr: 2.0
+  max_open_trades: 5
+
+analysis:
+  timeframes: ["15m", "1h", "4h", "1d"]
+  primary_timeframe: "1h"
+  ema_fast: 9
+  ema_slow: 21
+  ema_trend: 200
+  rsi_period: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  bb_period: 20
+  bb_std: 2.0
+  atr_period: 14
+  volume_ma_period: 20
+  lookback_candles: 200
+
+agents:
+  scan_interval_seconds: 60
+  max_concurrent_analyses: 5
+  signal_confidence_threshold: 65.0
+  require_multi_timeframe: true
+  enable_momentum: true
+  enable_mean_reversion: true
+  enable_breakout: true
+
+log_level: INFO
