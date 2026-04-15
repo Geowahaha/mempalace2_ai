@@ -282,3 +282,84 @@ Executor: "Buy 0.10 lots XAUUSD @ 3200.00"
 - **XAUUSD focus:** User specified Gold trading, not crypto
 - **Key insight:** Architecture mirrors Claude Code's tool/task/agent system but adapted for finance
 - **Next priorities:** Real API integration, backtesting, dashboard
+
+---
+
+## 🚀 Next Instructions: Going Live
+
+### Current State vs Live Trading
+
+| Component | Status | What's Needed |
+|-----------|--------|---------------|
+| Trading logic | ✅ Done | — |
+| Exchange API | 🔲 Synthetic only | Real broker connection |
+| Live prices | 🔲 Fake | WebSocket feed |
+| Order execution | 🔲 Simulated | Real order placement |
+| Server | 🔲 Local only | 24/7 hosted machine |
+
+### 1. Broker / Exchange Account
+
+For XAUUSD (Gold), best options:
+
+| Broker | API | Cost | Notes |
+|--------|-----|------|-------|
+| **OANDA** | REST + Streaming | Free practice, $0 commission | Best for gold forex, easy API |
+| **IC Markets** | via MT5/MT4 | Low spreads | Needs MetaTrader bridge |
+| **Pepperstone** | via cTrader API | Low spreads | Good API |
+| **FXCM** | REST | Free demo | Simple but limited |
+
+**Recommendation: OANDA** — ccxt support already in code, free practice account, clean API.
+
+### 2. Server (24/7 Uptime)
+
+The system needs to run continuously. Options:
+
+| Option | Cost/mo | Setup |
+|--------|---------|-------|
+| **Your PC** + keep it on | $0 | Easiest but unreliable |
+| **VPS (Vultr/DigitalOcean)** | $6-12 | Copy code, run it |
+| **AWS EC2** | $8-15 | More complex |
+| **Railway.app** | $5-20 | Push to GitHub, auto-deploys |
+
+**Recommendation: Vultr $6/mo VPS** — Ubuntu, SSH in, `python -m mempalace2_ai`
+
+### 3. Code Changes Needed for Live
+
+```
+Needed:
+├── Live WebSocket price feed (instead of polling)
+├── Real order placement (OANDA REST API)
+├── Database (SQLite) for trade history
+├── Telegram bot for alerts
+├── Graceful shutdown / restart handling
+└── Error recovery (reconnect on API failure)
+```
+
+### 4. Estimated Timeline
+
+```
+Phase 1: OANDA account + API keys           → 30 min (sign up, get keys)
+Phase 2: Real exchange integration           → 2-3 hours (code it)
+Phase 3: WebSocket live feed                 → 1-2 hours
+Phase 4: Database + alerts                   → 1-2 hours
+Phase 5: VPS setup + deploy                  → 1 hour
+                                         Total: ~1 day
+```
+
+### 5. Before Going Live — MUST DO
+
+1. **Paper trade first** — OANDA free practice account, zero risk
+2. **Backtest** — run on 6 months of historical data
+3. **Start small** — $500-1000 real money, 0.5% max position
+4. **Monitor for 2 weeks** — watch every trade, check logs
+
+### 6. Next Agent Tasks (Priority Order)
+
+1. Set up OANDA practice account, integrate real API
+2. Build WebSocket live price feed
+3. Add SQLite database for trade history
+4. Add Telegram/Discord alert bot
+5. Build backtesting engine with historical XAUUSD data
+6. Add web dashboard (FastAPI + simple frontend)
+7. VPS deployment scripts
+8. Paper trade for 2 weeks before going live with real money
