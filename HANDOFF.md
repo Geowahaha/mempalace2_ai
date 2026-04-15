@@ -39,6 +39,16 @@
 
 ---
 
+## ✅ DONE — Session 3: 2026-04-16 (Wiring + Tests + Delegate)
+
+| Task | Commit | What |
+|------|--------|------|
+| Task 1 — Wire agents | `98e0d9d` | Memory + skills in analyst, trajectory flow scanner→analyst→risk→executor, pattern/lesson storage on close, circuit breaker, context engine ticks |
+| Task 2 — Wire registry | `98e0d9d` | EnhancedToolRegistry with 6 learning tools |
+| Task 3 — Delegate agent | `c283d19`+ | `agents/delegate.py` — parallel multi-symbol subagents, isolated analysis, depth-limited |
+| Task 4 — Integration tests | `c283d19` | 29 tests, all passing |
+| Bugfix | `c283d19` | `skills/base.py` — string→list normalization for conditions, None-safe checks |
+
 ## 🔲 REMAINING — What the Next Agent Must Do
 
 These are the integration, wiring, and testing tasks to make the system fully functional:
@@ -108,17 +118,22 @@ for name, handler in make_skill_tools(self.state.skills_manager).items():
 self.state.enhanced_registry = enhanced_registry
 ```
 
-### Task 3: Add Subagent / Delegate System (MEDIUM PRIORITY)
+### ✅ Task 3: Add Subagent / Delegate System — DONE
 
-**New file: `agents/delegate.py`** — Adapted from `hermes-agent/tools/delegate_tool.py`
+**File: `agents/delegate.py`** — Adapted from `hermes-agent/tools/delegate_tool.py`
 
-- Spawn parallel analysis subagents for multi-symbol scanning
-- Isolated backtesting subagents that don't affect live state
-- Key concepts: `DELEGATE_BLOCKED_TOOLS`, `MAX_DEPTH`, batch mode
+- ✅ Parallel multi-symbol scanning with `delegate_parallel_scan()`
+- ✅ Isolated analysis subagents (no trade execution, no risk override)
+- ✅ `DELEGATE_BLOCKED_TOOLS` — children can't execute trades or set circuit breakers
+- ✅ `MAX_DEPTH=1` — no recursive delegation
+- ✅ Concurrency capped at `_MAX_CONCURRENT_CHILDREN=3`
+- ✅ Trajectory logging per delegation
+- ✅ Memory + skills read-only access for context
+- ✅ Wired into CoordinatorAgent as sub-agent
 
-### Task 4: Integration Testing (HIGH PRIORITY)
+### ✅ Task 4: Integration Testing — DONE
 
-Create `tests/test_integration.py`:
+**File: `tests/test_integration.py`** — 29 tests, all passing
 
 ```python
 # Test the full enhanced pipeline:

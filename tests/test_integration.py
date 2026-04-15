@@ -328,6 +328,59 @@ class TestTrajectoryLogger(unittest.TestCase):
         self.assertGreaterEqual(count, 1)
 
 
+class TestDelegateAgent(unittest.TestCase):
+    """Test DelegateAgent parallel scanning."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = Path(self.tmpdir) / "delegate_test.db"
+        self.traj_dir = Path(self.tmpdir) / "trajectories"
+        from enhanced.boot import EnhancedBootPipeline
+        pipeline = EnhancedBootPipeline(
+            db_path=str(self.db_path),
+            trajectory_dir=str(self.traj_dir),
+        )
+        self.state = asyncio.run(pipeline.boot())
+
+    def tearDown(self):
+        if hasattr(self.state, 'scheduler') and self.state.scheduler:
+            asyncio.run(self.state.scheduler.stop())
+        shutil.rmtree(self.tmpdir)
+
+    def test_delegate_agent_init(self):
+        """Delegate agent initializes properly."""
+        from agents.delegate import DelegateAgent
+        agent = DelegateAgent(self.state)
+        self.assertEqual(agent.name, "delegate")
+
+    def test_delegate_blocked_tools(self):
+        """Blocked tools constant is defined."""
+        from agents.delegate import DELEGATE_BLOCKED_TOOLS, MAX_DEPTH
+        self.assertIn("execute_trade", DELEGATE_BLOCKED_TOOLS)
+        self.assertIn("delegate_task", DELEGATE_BLOCKED_TOOLS)
+        self.assertEqual(MAX_DEPTH, 1)
+
+    def test_detect_setups(self):
+        """Delegate agent can detect setups from indicators."""
+        from agents.delegate import DelegateAgent
+        agent = DelegateAgent(self.state)
+        ohlcv = _make_ohlcv()
+
+        class MockIndicators:
+            ema_fast = ohlcv["close"].iloc[-1] + 1
+            ema_slow = ohlcv["close"].iloc[-1] - 1
+            ema_trend = ohlcv["close"].iloc[-1] - 5
+            rsi = 25.0
+            supertrend_direction = 1
+            macd_histogram = 0.5
+            adx = 20.0
+
+        setups = agent._detect_setups("XAUUSD", MockIndicators(), ohlcv)
+        self.assertIsInstance(setups, list)
+        # Should detect RSI oversold at minimum
+        self.assertTrue(any(s["type"] == "rsi_oversold" for s in setups))
+
+
 class TestContextEngine(unittest.TestCase):
     """Test ContextEngine scan tick and compression."""
 

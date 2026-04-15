@@ -20,6 +20,7 @@ from agents.market_scanner import MarketScannerAgent
 from agents.analyst import AnalystAgent
 from agents.risk_manager import RiskManagerAgent
 from agents.executor import ExecutorAgent
+from agents.delegate import DelegateAgent
 
 logger = logging.getLogger("mempalace2.agents.coordinator")
 
@@ -56,6 +57,7 @@ class CoordinatorAgent(BaseAgent):
             "analyst": AnalystAgent(self.state),
             "risk_manager": RiskManagerAgent(self.state),
             "executor": ExecutorAgent(self.state),
+            "delegate": DelegateAgent(self.state),
         }
 
         # Initialize each sub-agent
