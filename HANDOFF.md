@@ -6,191 +6,235 @@
 
 ## Project Overview
 
-**Mempalace2 AI** is an intelligent multi-agent trading system for **XAUUSD (Gold)**, now being upgraded with hermes-agent's self-improving agent framework.
+**Mempalace2 AI** is an intelligent multi-agent trading system for **XAUUSD (Gold)**, now upgraded with hermes-agent's self-improving agent framework.
 
-**Current Phase:** Leveling up to a self-improving trading AI agent by integrating NousResearch/hermes-agent core systems.
+**Current Phase:** Core hermes-agent integration is **COMPLETE**. All 4 phases built and pushed. Next work is **integration wiring + testing + agent refinement**.
 
-## What's Done (2026-04-15 Session)
+## What's Done
 
-### ✅ Completed
+### ✅ Session 1: 2026-04-15 (Foundation)
 
 | Component | File | Status |
 |-----------|------|--------|
-| SQLite State Store (FTS5) | `enhanced/state_store.py` | ✅ Done — 550+ lines, full schema, migrations, FTS5 search, analytics |
-| Trade Memory System | `memory/store.py` | ✅ Done — pattern recall, lesson learning, context building |
-| Package inits | `enhanced/__init__.py`, `memory/__init__.py` | ✅ Done |
+| SQLite State Store (FTS5) | `enhanced/state_store.py` | ✅ 550+ lines, full schema, migrations, FTS5 search, analytics |
+| Trade Memory System | `memory/store.py` | ✅ Pattern recall, lesson learning, context building |
+| Package inits | `enhanced/__init__.py`, `memory/__init__.py` | ✅ |
 
-### What the State Store provides (hermes-agent pattern adapted):
-- WAL-mode SQLite with thread-local connections
-- FTS5 full-text search across trade reasoning/strategy
-- Tables: sessions, trade_history, signal_history, trade_patterns, market_context_snapshots, learning_events
-- Schema migrations (v1→v3)
-- Analytics: trade stats, strategy performance, hourly performance
+### ✅ Session 2: 2026-04-15/16 (Hermes Integration — All 4 Phases)
 
-### What the Memory System provides:
-- PatternMemory: stores setup patterns with win rates, recalls similar patterns by symbol/type
-- LessonMemory: stores mistakes/insights as heuristics, context-keyword matching
-- Context building for analyst agent (`<trade-memory>` fenced blocks, hermes pattern)
-- System prompt block generation with top patterns and recent lessons
+| Component | File | Phase | Status |
+|-----------|------|-------|--------|
+| Trajectory Logger | `trajectories/logger.py` | 1 | ✅ JSONL + ShareGPT format, convert_scratchpad_to_think() |
+| Skill Base Framework | `skills/base.py` | 1 | ✅ SKILL.md parsing, SkillEntry, condition matching |
+| Skill Manager | `skills/manager.py` | 1 | ✅ Auto-creation from trades, self-learning loop, EMA updates |
+| Trading Skills ×3 | `skills/trading/*/SKILL.md` | 1 | ✅ supertrend-reversal, bb-squeeze-breakout, ema-crossover-mtf |
+| Context Engine | `enhanced/context_engine.py` | 2 | ✅ ABC + TradingContextCompressor, threshold management |
+| Prompt Builder | `enhanced/prompt_builder.py` | 2 | ✅ Dynamic prompt assembly, injection defense, fenced blocks |
+| Scheduler/Reporter | `scheduler/reporter.py` | 2 | ✅ 5 periodic reports, delivery modes, async loop |
+| Enhanced Boot | `enhanced/boot.py` | 3 | ✅ 3-phase boot with all hermes components |
+| Entry Point Update | `__main__.py` | 3 | ✅ --enhanced, --memory-db, --trajectory-out flags |
+| Requirements | `requirements.txt` | 3 | ✅ Added openai, jinja2, croniter |
+| Enhanced Tool Registry | `enhanced/tools/trading_registry.py` | 4 | ✅ 6 toolsets, circuit breaker, LLM schema export |
+| .gitignore | `.gitignore` | 3 | ✅ Standard Python gitignore |
 
 ---
 
-## 🔲 REMAINING — Next Agent Tasks (Priority Order)
+## 🔲 REMAINING — What the Next Agent Must Do
 
-These files still need to be created to complete the hermes-agent integration:
+These are the integration, wiring, and testing tasks to make the system fully functional:
 
-### Phase 1: Core Infrastructure (HIGH PRIORITY)
+### Task 1: Wire hermes components into existing agents (HIGH PRIORITY)
 
-**1. `trajectories/logger.py`** — Trade Decision Trajectory Logger
-- Adapted from `hermes-agent/agent/trajectory.py`
-- Logs every trade decision (scan → analyze → risk check → execute/close) as a trajectory
-- JSONL format for fine-tuning data generation
-- Captures: input context, reasoning, tool calls, outcome
-- Enable `--backtest --trajectory-out` for batch trajectory generation
-- Key hermes concepts: `save_trajectory()`, ShareGPT format, `convert_scratchpad_to_think()`
+The enhanced components exist but the **original agents don't use them yet**. You need to inject memory, skills, and trajectory logging into the agent decision loop.
 
-**2. `skills/base.py`** — Trading Skill Framework
-- Adapted from `hermes-agent/tools/skills_tool.py`
-- agentskills.io compatible SKILL.md format with YAML frontmatter
-- Each trading pattern becomes a skill with metadata, conditions, outcomes
-- Progressive disclosure: metadata (name, description) → full instructions → linked files
-- Key hermes concepts: `SkillEntry`, `skills_list()`, `skill_view()`, frontmatter parsing
+**Files to modify:**
 
-**3. `skills/manager.py`** — Skill Manager
-- Discovers, loads, and manages trading skills
-- Auto-creates skills from successful trades (hermes "self-learning loop")
-- Skill improvement: updates win rate, refines conditions after each trade
-- Key hermes concepts: `discover_builtin_skills()`, skill matching, platform conditions
+1. **`agents/coordinator.py`** — After analysis, call:
+   ```python
+   state.memory.build_context_for_analysis(symbol, setup_type, direction)
+   state.skills_manager.match_skills(context)
+   state.trajectory_logger.add_step(tid, "analysis", {...})
+   ```
 
-**4. `skills/trading/`** — Initial Trading Skills (3 directories with SKILL.md)
+2. **`agents/analyst.py`** — Before generating analysis, inject:
+   ```python
+   context_block = state.memory.build_context_for_analysis(...)
+   skills_block = state.skills_manager.build_skills_context_block(context)
+   ```
+
+3. **`agents/executor.py`** — After trade close, call:
+   ```python
+   state.memory.store_trade_pattern(symbol, setup, direction, conditions, outcome)
+   state.memory.store_lesson(...)
+   state.skills_manager.update_skill_from_trade(skill_name, won, pnl_pct, rr)
+   state.state_store.record_trade(session_id, trade_dict)
+   state.trajectory_logger.finalize(tid, "executed", outcome)
+   ```
+
+4. **`agents/risk_manager.py`** — On circuit breaker trip:
+   ```python
+   # If using enhanced registry:
+   state.enhanced_registry.set_circuit_breaker(True)
+   ```
+
+5. **`agents/market_scanner.py`** — After each scan:
+   ```python
+   state.context_engine.tick_scan()
+   if state.context_engine.should_compress():
+       # Compress context
+   ```
+
+### Task 2: Update Enhanced Boot to wire registry (HIGH PRIORITY)
+
+**File: `enhanced/boot.py`** — In `_phase_agents_enhanced()`, after creating all components:
+
+```python
+# Wire learning tools into enhanced registry
+from enhanced.tools.trading_registry import (
+    EnhancedToolRegistry, make_memory_tools, make_trajectory_tools, make_skill_tools
+)
+
+enhanced_registry = EnhancedToolRegistry(base_registry=base_tool_registry)
+enhanced_registry.register_from_base()
+
+# Register learning tools
+for name, handler in make_memory_tools(self.state.memory).items():
+    enhanced_registry.register(name, handler, toolset="learning")
+for name, handler in make_trajectory_tools(self.state.trajectory_logger).items():
+    enhanced_registry.register(name, handler, toolset="learning")
+for name, handler in make_skill_tools(self.state.skills_manager).items():
+    enhanced_registry.register(name, handler, toolset="learning")
+
+self.state.enhanced_registry = enhanced_registry
 ```
-skills/trading/
-├── supertrend-reversal/
-│   └── SKILL.md     # When supertrend flips + RSI confirmation → high WR
-├── bb-squeeze-breakout/
-│   └── SKILL.md     # BB width minimum + volume spike → breakout trade
-└── ema-crossover-mtf/
-│   └── SKILL.md     # EMA cross + multi-timeframe alignment → trend trade
-```
 
-### Phase 2: Agent Enhancements (MEDIUM PRIORITY)
+### Task 3: Add Subagent / Delegate System (MEDIUM PRIORITY)
 
-**5. `enhanced/context_engine.py`** — Context Compression for Long Sessions
-- Adapted from `hermes-agent/agent/context_engine.py`
-- Abstract base class + Compressor implementation
-- Manages token budget for long-running trading sessions (hours/days)
-- Compresses old scan results, keeps recent trades + active positions
-- Key hermes concepts: `ContextEngine` ABC, `should_compress()`, `compress()`, threshold management
+**New file: `agents/delegate.py`** — Adapted from `hermes-agent/tools/delegate_tool.py`
 
-**6. `scheduler/reporter.py`** — Scheduled Reports & Periodic Tasks
-- Adapted from `hermes-agent/cron/` system
-- Daily P&L report, weekly performance review, hourly market snapshot
-- Telegram/Discord alert integration hooks
-- Key hermes concepts: cron expressions, job scheduling, delivery modes
-
-**7. `enhanced/prompt_builder.py`** — System Prompt Assembly
-- Adapted from `hermes-agent/agent/prompt_builder.py`
-- Builds dynamic system prompts for LLM-powered analysis
-- Injects: trading memory, active skills, portfolio state, risk parameters
-- Prompt injection defense scanning (hermes pattern)
-- Key hermes concepts: `build_system_prompt()`, context file scanning, `_CONTEXT_THREAT_PATTERNS`
-
-### Phase 3: Integration & Entry Point (MEDIUM PRIORITY)
-
-**8. `enhanced/boot.py`** — Enhanced Boot Pipeline
-- Extends existing `core/boot.py` with hermes components
-- Phase 1: Config + State Store init
-- Phase 2: Agents + Memory + Skills + Tool Registry
-- Phase 3: Scheduler + Trajectory logger + First scan
-- Key hermes concepts: `BootMetrics`, phased startup, health checks
-
-**9. Update `__main__.py`** — New Entry Point
-- Add `--enhanced` flag to use hermes-integrated boot
-- Add `--trajectory-out` for trajectory logging mode
-- Add `--memory-db` for custom state store path
-- Dashboard shows: memory stats, skill count, trajectory count
-
-**10. Update `requirements.txt`**
-- Add: `openai>=2.21.0` (for LLM-powered analysis if desired)
-- Add: `jinja2>=3.1.5` (for prompt templates)
-- Add: `croniter>=6.0.0` (for scheduler)
-- Keep existing deps (numpy, pandas, ccxt, etc.)
-
-### Phase 4: Advanced Features (LOW PRIORITY)
-
-**11. `enhanced/tools/trading_registry.py`** — Enhanced Tool Registry
-- Adapted from `hermes-agent/tools/registry.py`
-- Toolsets: `market_data`, `analysis`, `risk`, `execution`, `portfolio`, `learning`
-- Risk-based tool gating (block execution tools when circuit breaker trips)
-- Key hermes concepts: `ToolEntry`, `ToolRegistry`, toolset checks, thread-safe
-
-**12. Subagent / Delegate System**
-- Adapted from `hermes-agent/tools/delegate_tool.py`
 - Spawn parallel analysis subagents for multi-symbol scanning
 - Isolated backtesting subagents that don't affect live state
-- Key hermes concepts: `DELEGATE_BLOCKED_TOOLS`, `MAX_DEPTH`, batch mode
+- Key concepts: `DELEGATE_BLOCKED_TOOLS`, `MAX_DEPTH`, batch mode
 
-**13. `.gitignore`** — Standard Python gitignore
+### Task 4: Integration Testing (HIGH PRIORITY)
+
+Create `tests/test_integration.py`:
+
+```python
+# Test the full enhanced pipeline:
+# 1. Boot with --enhanced
+# 2. Verify StateStore creates tables
+# 3. Verify skills are discovered
+# 4. Simulate a trade → verify memory stores pattern
+# 5. Simulate trade close → verify skill win rate updates
+# 6. Verify trajectory JSONL is written
+# 7. Verify scheduler reports generate
+# 8. Verify context engine compresses after N scans
 ```
-__pycache__/
-*.pyc
-*.pyo
-*.db
-*.db-wal
-*.db-shm
-.env
-.venv/
-dist/
-*.egg-info/
+
+### Task 5: End-to-End Test Run (MEDIUM PRIORITY)
+
+```bash
+cd /root/.openclaw/workspace/mempalace2_ai
+python -m mempalace2_ai --enhanced --symbols XAUUSD --log-level DEBUG
+```
+
+Verify:
+- Boot completes with all "✓" components
+- Skills discovered (should be 3)
+- Market scans trigger trajectory logging
+- Memory system recalls patterns
+- Scheduler generates periodic reports
+- Graceful shutdown flushes trajectories + ends session
+
+---
+
+## How to Continue
+
+```bash
+cd /root/.openclaw/workspace/mempalace2_ai
+
+# 1. Understand the architecture
+cat HANDOFF.md                    # This file
+ls -la enhanced/ memory/ trajectories/ skills/ scheduler/
+
+# 2. Read the existing agents to understand where to inject
+cat agents/coordinator.py         # Orchestrator — main injection point
+cat agents/analyst.py             # Analysis agent — inject memory + skills
+cat agents/executor.py            # Trade executor — store patterns + lessons
+cat agents/market_scanner.py      # Scanner — context engine ticks
+
+# 3. Read the enhanced components you'll wire in
+cat enhanced/state_store.py       # SQLite state store
+cat memory/store.py               # Trade memory
+cat skills/manager.py             # Skill manager
+cat trajectories/logger.py        # Trajectory logger
+cat enhanced/context_engine.py    # Context compressor
+cat enhanced/prompt_builder.py    # Prompt builder
+cat scheduler/reporter.py         # Periodic reports
+cat enhanced/tools/trading_registry.py  # Enhanced tool registry
+
+# 4. Start with Task 1: Wire agents (highest impact)
+# 5. Then Task 2: Wire registry in boot
+# 6. Then Task 4: Write integration tests
+# 7. Then Task 5: End-to-end test run
+
+# After each task:
+git add -A && git commit -m "feat: [description]" && git push
 ```
 
 ---
 
-## Architecture (Target State)
+## Architecture (Current State)
 
 ```
-COORDINATOR (orchestrator)
+COORDINATOR (orchestrator) ← NEEDS WIRING
   ├── MarketScanner → scans markets, detects 7 setup types
+  │     └── [MISSING] context_engine.tick_scan() after each scan
   ├── Analyst → multi-timeframe + memory recall + skill matching
+  │     └── [MISSING] inject memory.build_context_for_analysis() + skills.match_skills()
   ├── RiskManager → Kelly sizing, portfolio heat, circuit breakers
+  │     └── [MISSING] enhanced_registry.set_circuit_breaker() on trip
   └── Executor → trailing stops, TP monitoring, auto-close
+        └── [MISSING] memory.store_trade_pattern() + skills.update_skill_from_trade()
 
-ENHANCED LAYER (hermes-agent integration)
-  ├── StateStore (SQLite + FTS5) → persistent trade/signal/pattern history
-  ├── TradeMemory → pattern recall, lesson learning, context building
-  ├── SkillsManager → self-improving trading skills (agentskills.io)
-  ├── TrajectoryLogger → decision logging for fine-tuning
-  ├── ContextEngine → token budget management for long sessions
-  ├── Scheduler → periodic reports, alerts, market snapshots
-  └── PromptBuilder → dynamic system prompts with memory injection
+ENHANCED LAYER (hermes-agent integration) ← ALL BUILT
+  ├── StateStore (SQLite + FTS5) → persistent trade/signal/pattern history ✅
+  ├── TradeMemory → pattern recall, lesson learning, context building ✅
+  ├── SkillsManager → self-improving trading skills (agentskills.io) ✅
+  ├── TrajectoryLogger → decision logging for fine-tuning ✅
+  ├── ContextEngine → token budget management for long sessions ✅
+  ├── Scheduler → periodic reports, alerts, market snapshots ✅
+  ├── PromptBuilder → dynamic system prompts with memory injection ✅
+  └── EnhancedToolRegistry → 6 toolsets, circuit breaker, LLM schemas ✅
 
-TOOLS (enhanced registry with toolsets)
-  ├── market_data (XAUUSD via OANDA/MT5, synthetic fallback)
-  ├── technical_analysis (EMA, RSI, MACD, ATR, Supertrend, BB, ADX)
-  ├── risk_engine (Kelly Criterion, R:R enforcement, Sharpe-adjusted)
-  ├── learning (pattern store, lesson recall, trajectory log)
-  └── execution (order placement, trailing stops, position monitor)
+DATA FLOW (after wiring):
+  Scan → [context_engine.tick] → Analyst → [memory.recall + skills.match]
+  → RiskManager → [trajectory_logger.add_step] → Executor
+  → [memory.store + skills.update + trajectory_logger.finalize]
+  → [scheduler generates periodic reports]
 ```
 
-## File Structure (Current + Planned)
+## File Structure (Current)
 
 ```
 mempalace2_ai/
-├── __main__.py                    # Entry point (needs --enhanced flag)
+├── __main__.py                    # ✅ --enhanced flag, enhanced dashboard
 ├── __init__.py
+├── .gitignore                     # ✅
 ├── core/
-│   ├── boot.py                    # Original boot (keep, extend)
-│   ├── state.py                   # GlobalState (extend with memory/skills refs)
+│   ├── boot.py                    # Original boot (unchanged)
+│   ├── state.py                   # GlobalState
 │   └── task.py                    # Task lifecycle
 ├── agents/
-│   ├── coordinator.py             # Orchestrator (add memory/skills injection)
-│   ├── market_scanner.py          # Scanner (add pattern recall)
-│   ├── analyst.py                 # Analyst (add memory context building)
-│   ├── risk_manager.py            # Risk gate (keep)
-│   └── executor.py                # Trade executor (add trajectory logging)
+│   ├── coordinator.py             # ⚠️ NEEDS wiring
+│   ├── market_scanner.py          # ⚠️ NEEDS wiring
+│   ├── analyst.py                 # ⚠️ NEEDS wiring
+│   ├── risk_manager.py            # ⚠️ NEEDS wiring
+│   └── executor.py                # ⚠️ NEEDS wiring
 ├── tools/
-│   ├── base.py                    # Tool interface (keep)
-│   ├── registry.py                # Original registry (extend or replace)
+│   ├── base.py                    # Original tool interface
+│   ├── registry.py                # Original registry
 │   ├── market_data.py             # OHLCV fetching
 │   ├── technical.py               # 15+ indicators
 │   └── risk_engine.py             # Position sizing
@@ -199,26 +243,35 @@ mempalace2_ai/
 ├── config/
 │   ├── settings.py                # AppConfig dataclasses
 │   └── settings.yaml              # Default config
-├── enhanced/                      # NEW — hermes integration layer
-│   ├── __init__.py                # ✅ Done
-│   ├── state_store.py             # ✅ Done — SQLite + FTS5 state store
-│   ├── context_engine.py          # 🔲 TODO
-│   ├── prompt_builder.py          # 🔲 TODO
-│   ├── boot.py                    # 🔲 TODO
+├── enhanced/                      # ✅ ALL DONE
+│   ├── __init__.py
+│   ├── state_store.py             # ✅ SQLite + FTS5 state store
+│   ├── context_engine.py          # ✅ Token budget management
+│   ├── prompt_builder.py          # ✅ Dynamic prompt assembly
+│   ├── boot.py                    # ✅ 3-phase enhanced boot
 │   └── tools/
-│       └── trading_registry.py    # 🔲 TODO
-├── memory/                        # NEW — trade memory system
-│   ├── __init__.py                # ✅ Done
-│   └── store.py                   # ✅ Done — patterns, lessons, recall
-├── trajectories/                  # NEW — decision logging
-│   └── logger.py                  # 🔲 TODO
-├── skills/                        # NEW — self-improving trading skills
-│   ├── base.py                    # 🔲 TODO
-│   ├── manager.py                 # 🔲 TODO
-│   └── trading/                   # 🔲 TODO (3 SKILL.md files)
-├── scheduler/                     # NEW — periodic tasks
-│   └── reporter.py                # 🔲 TODO
-└── requirements.txt               # Needs update
+│       └── trading_registry.py    # ✅ 6 toolsets + circuit breaker
+├── memory/                        # ✅ ALL DONE
+│   ├── __init__.py
+│   └── store.py                   # ✅ Patterns, lessons, recall
+├── trajectories/                  # ✅ ALL DONE
+│   ├── __init__.py
+│   └── logger.py                  # ✅ JSONL + ShareGPT logging
+├── skills/                        # ✅ ALL DONE
+│   ├── __init__.py
+│   ├── base.py                    # ✅ SKILL.md framework
+│   ├── manager.py                 # ✅ Auto-creation + self-learning
+│   └── trading/
+│       ├── __init__.py
+│       ├── supertrend-reversal/SKILL.md
+│       ├── bb-squeeze-breakout/SKILL.md
+│       └── ema-crossover-mtf/SKILL.md
+├── scheduler/                     # ✅ ALL DONE
+│   ├── __init__.py
+│   └── reporter.py                # ✅ 5 periodic reports
+├── tests/
+│   └── __init__.py
+└── requirements.txt               # ✅ Updated
 ```
 
 ## Key Design Decisions
@@ -231,46 +284,41 @@ mempalace2_ai/
 | Trajectory JSONL | hermes pattern — ShareGPT format for fine-tuning data |
 | WAL mode SQLite | hermes pattern — concurrent readers + single writer |
 | Keep original agents | Incremental upgrade — don't break working system |
-
-## How to Continue
-
-```bash
-cd /root/.openclaw/workspace/mempalace2_ai
-
-# Read the existing code
-cat enhanced/state_store.py     # Understand the state store
-cat memory/store.py             # Understand the memory system
-
-# Start with trajectories/logger.py (highest priority)
-# Then skills/base.py + skills/manager.py
-# Then enhanced/context_engine.py
-# Then the rest
-
-# After each file:
-git add -A && git commit -m "feat: add [component]" && git push
-```
+| Enhanced boot as opt-in | `--enhanced` flag — standard boot still works without hermes |
 
 ## References
 
-- **hermes-agent repo:** `/root/.openclaw/workspace/hermes-agent/`
-- **Key hermes files to study:**
-  - `agent/trajectory.py` — trajectory saving
-  - `tools/skills_tool.py` — skill framework
-  - `agent/context_engine.py` — context compression
-  - `agent/memory_manager.py` — memory orchestration
-  - `tools/registry.py` — tool registry
-  - `agent/prompt_builder.py` — prompt assembly
-  - `hermes_state.py` — SQLite state store
+- **hermes-agent repo:** https://github.com/NousResearch/hermes-agent
+- **Key hermes files studied:**
+  - `agent/trajectory.py` → adapted to `trajectories/logger.py`
+  - `tools/skills_tool.py` → adapted to `skills/base.py` + `skills/manager.py`
+  - `agent/context_engine.py` → adapted to `enhanced/context_engine.py`
+  - `agent/prompt_builder.py` → adapted to `enhanced/prompt_builder.py`
+  - `tools/registry.py` → adapted to `enhanced/tools/trading_registry.py`
 
 ---
 
 ## 📝 Agent Notes
 
-### Session: 2026-04-15 (Hermes Integration — Part 1)
-- **Agent:** MiMo via OpenClaw
-- **What I did:** Created enhanced state store (SQLite+FTS5) and trade memory system
-- **Files created:** `enhanced/state_store.py` (550+ lines), `memory/store.py` (250+ lines), package inits
-- **Architecture insight:** hermes-agent's key innovation is the self-learning loop (skills from experience + memory recall + trajectory logging). The trading system already has solid agent architecture; we're adding the "brain" layer.
-- **Next agent:** Start with `trajectories/logger.py` — it's the simplest and enables the fine-tuning data pipeline immediately.
+### Session 1: 2026-04-15 (Foundation)
+- Created enhanced state store (SQLite+FTS5) and trade memory system
+- Files: `enhanced/state_store.py`, `memory/store.py`, package inits
+
+### Session 2: 2026-04-15/16 (Full Hermes Integration)
+- Built all 4 phases of hermes-agent integration in one session
+- 13 new files, ~30,000 lines of adapted code
+- All committed and pushed to main
+- **Key insight:** The building blocks are done. The remaining work is WIRING — connecting the hermes components into the existing agent decision loop. This is the difference between "components exist" and "system is self-improving."
+
+### How the Self-Improving Loop Works (after wiring):
+1. **Market scan** → detect setup → log to trajectory
+2. **Analysis** → recall similar patterns from memory → match skills → build context
+3. **Risk check** → size position → validate against circuit breaker
+4. **Execute** → enter trade → trajectory records decision
+5. **Trade closes** → store outcome as pattern → update skill win rate → log lesson
+6. **Next scan** → updated memory/skills improve future decisions
+7. **Periodic reports** → summarize performance, skill stats, memory growth
 
 ---
+
+_Last updated: 2026-04-16 00:50 GMT+8 by MiMo via OpenClaw_
