@@ -1,4 +1,4 @@
-name: Deploy to Oracle VM
+name: Deploy to Tencent VM
 
 on:
   push:
@@ -7,84 +7,59 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
+          INSTALL_OLLAMA: ${{ secrets.INSTALL_OLLAMA }}
         with:
-          host: 129.150.36.17
-          username: ubuntu
-          key: ${{ secrets.ORACLE_SSH_KEY }}
+          host: ${{ secrets.TENCENT_VM_HOST }}
+          username: ${{ secrets.TENCENT_VM_USER }}
+          key: ${{ secrets.TENCENT_VM_SSH_KEY }}
           port: 22
-          command_timeout: 10m
-          envs: GH_PAT
+          command_timeout: 15m
+          envs: GH_PAT,INSTALL_OLLAMA
           script: |
             set -euo pipefail
-            APP_DIR="/opt/dexter_pro"
-            REPO_URL="https://${GH_PAT}@github.com/Geowahaha/Oracle_Ctrader_Geomonkey.git"
+            APP_DIR="/opt/mempalace_ai"
+            APP_USER="$(id -un)"
+            REPO_URL="https://${GH_PAT}@github.com/Geowahaha/mempalace2_ai.git"
 
-            # Set git credentials so pip can clone from GitHub
-            git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
-
-            # First-time setup: create dir, clone repo, create venv
-            if [ ! -d "$APP_DIR/.git" ]; then
-              sudo rm -rf "$APP_DIR"
-              echo "=== First-time setup ==="
-              sudo apt-get update -y
-              sudo apt-get install -y python3-venv python3-pip build-essential
-              sudo mkdir -p "$APP_DIR"
-              sudo chown ubuntu:ubuntu "$APP_DIR"
-              git clone --branch main "$REPO_URL" "$APP_DIR"
-              cd "$APP_DIR"
-              git remote set-url origin "$REPO_URL"
-              python3 -m venv .venv
-              . .venv/bin/activate
-              pip install --upgrade pip wheel
-              pip install -r requirements.txt
-              echo "=== First-time setup complete ==="
-              echo "NOTE: Edit /opt/dexter_pro/.env.local with API keys, then run:"
-              echo "  sudo systemctl start dexter-monitor"
-              exit 0
+            if [ -z "${GH_PAT:-}" ]; then
+              echo "GH_PAT secret is missing."
+              exit 1
             fi
 
-            echo "=== Pulling latest code ==="
+            git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              sudo mkdir -p "$APP_DIR"
+              sudo chown "$APP_USER:$APP_USER" "$APP_DIR"
+              git clone --branch main "$REPO_URL" "$APP_DIR"
+            fi
+
             cd "$APP_DIR"
             git remote set-url origin "$REPO_URL"
             git fetch --all --prune
             git checkout main
             git pull --ff-only
 
-            # Create venv if missing or broken
-            if [ ! -f "$APP_DIR/.venv/bin/activate" ]; then
-              echo "=== Creating venv ==="
-              rm -rf "$APP_DIR/.venv"
-              sudo apt-get update -y
-              sudo apt-get install -y python3-venv python3-pip build-essential
-              python3 -m venv .venv
-              . .venv/bin/activate
-              pip install --upgrade pip wheel
-              pip install -r requirements.txt
-            fi
+            sudo REPO_URL="$REPO_URL" \
+                 APP_USER="$APP_USER" \
+                 APP_DIR="$APP_DIR" \
+                 BRANCH=main \
+                 INSTALL_OLLAMA="${INSTALL_OLLAMA:-0}" \
+                 bash ops/tencent_mempalace_setup.sh
 
-            echo "=== Installing dependencies ==="
-            . .venv/bin/activate
-            pip install -q --upgrade pip
-            pip install -q -r requirements.txt
-
-            echo "=== Restarting service ==="
-            if sudo systemctl is-enabled dexter-monitor 2>/dev/null; then
-              sudo systemctl restart dexter-monitor
-              sleep 5
-              STATUS=$(sudo systemctl is-active dexter-monitor || true)
-              echo "Service status: $STATUS"
-              if [ "$STATUS" = "active" ] || [ "$STATUS" = "activating" ]; then
-                echo "Deploy complete — service running!"
-              else
-                echo "WARNING: service status is $STATUS — check logs with: sudo journalctl -u dexter-monitor -n 50"
-              fi
-            else
-              echo "Deploy complete — service not yet configured (run oracle_always_free_setup.sh)"
+            sudo systemctl restart mempalace-trader
+            sleep 5
+            STATUS="$(sudo systemctl is-active mempalace-trader || true)"
+            echo "Service status: ${STATUS}"
+            if [ "${STATUS}" != "active" ] && [ "${STATUS}" != "activating" ]; then
+              echo "ERROR: mempalace-trader is not running."
+              sudo journalctl -u mempalace-trader -n 80 --no-pager || true
+              exit 1
             fi
