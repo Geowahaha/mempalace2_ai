@@ -18,7 +18,8 @@ def config_env_paths() -> tuple[Path, ...]:
     Legacy root `.env` is kept as a fallback, but `trading_ai/.env` is the active
     source of truth for local operator workflows and token refresh updates.
     """
-
+    if _PACKAGE_ENV_PATH.is_file():
+        return (_PACKAGE_ENV_PATH,)
     return (_ROOT_ENV_PATH, _PACKAGE_ENV_PATH)
 
 
@@ -133,6 +134,25 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="LLM_FALLBACK_ENABLED",
         description="Use a conservative heuristic fallback when the configured LLM is unavailable.",
+    )
+    llm_failover_failure_threshold: int = Field(
+        default=2,
+        validation_alias="LLM_FAILOVER_FAILURE_THRESHOLD",
+        ge=1,
+        le=10,
+        description="Open per-model circuit breaker after this many consecutive failover errors.",
+    )
+    llm_failover_cooldown_sec: float = Field(
+        default=20.0,
+        validation_alias="LLM_FAILOVER_COOLDOWN_SEC",
+        ge=0.0,
+        le=600.0,
+        description="Seconds to skip a failing model before retrying it in the chain.",
+    )
+    llm_failover_runtime_path: Path = Field(
+        default=Path("./data/llm_failover_runtime.json"),
+        validation_alias="LLM_FAILOVER_RUNTIME_PATH",
+        description="Runtime telemetry snapshot for failover chain health and latency diagnostics.",
     )
 
     # --- Memory ---
@@ -988,6 +1008,7 @@ class Settings(BaseSettings):
         self.strategy_registry_path = _resolve_path(self.strategy_registry_path, base)
         self.strategy_correlation_path = _resolve_path(self.strategy_correlation_path, base)
         self.chroma_path = _resolve_path(self.chroma_path, base)
+        self.llm_failover_runtime_path = _resolve_path(self.llm_failover_runtime_path, base)
         self.weekly_lane_profile_path = _resolve_path(self.weekly_lane_profile_path, base)
         self.skillbook_dir = _resolve_path(self.skillbook_dir, base)
         self.skillbook_index_path = _resolve_path(self.skillbook_index_path, base)

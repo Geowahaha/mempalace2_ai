@@ -64,7 +64,7 @@ from trading_ai.core.strategy import RiskManager, evaluate_outcome
 from trading_ai.core.strategy_evolution import StrategyRegistry, build_strategy_key
 from trading_ai.integrations.ctrader import CTraderBroker, CTraderConfig
 from trading_ai.integrations.ctrader_dexter_worker import CTraderDexterWorkerBroker
-from trading_ai.integrations.failover import FailoverProvider
+from trading_ai.integrations.failover import FailoverProvider, failover_runtime_snapshot
 from trading_ai.integrations.mimo import MiMoProvider
 from trading_ai.integrations.ollama import OllamaProvider
 from trading_ai.integrations.openai_adapter import OpenAIProvider
@@ -101,6 +101,9 @@ def _build_openai_chain(
     max_retries: int,
     max_tokens: int,
     label_prefix: str,
+    failover_name: str,
+    failure_threshold: int,
+    cooldown_sec: float,
 ):
     providers = [
         (
@@ -117,7 +120,16 @@ def _build_openai_chain(
         for model in models
     ]
     log.info("%s failover chain: %s", label_prefix.upper(), [label for label, _ in providers])
-    return FailoverProvider(providers) if len(providers) > 1 else providers[0][1]
+    return (
+        FailoverProvider(
+            providers,
+            name=failover_name,
+            failure_threshold=failure_threshold,
+            cooldown_sec=cooldown_sec,
+        )
+        if len(providers) > 1
+        else providers[0][1]
+    )
 
 
 def _build_local_chain(
@@ -130,6 +142,9 @@ def _build_local_chain(
     keep_alive: Optional[str],
     think: Optional[bool],
     label_prefix: str,
+    failover_name: str,
+    failure_threshold: int,
+    cooldown_sec: float,
 ):
     providers = [
         (
@@ -148,7 +163,16 @@ def _build_local_chain(
         for model in models
     ]
     log.info("%s failover chain: %s", label_prefix.upper(), [label for label, _ in providers])
-    return FailoverProvider(providers) if len(providers) > 1 else providers[0][1]
+    return (
+        FailoverProvider(
+            providers,
+            name=failover_name,
+            failure_threshold=failure_threshold,
+            cooldown_sec=cooldown_sec,
+        )
+        if len(providers) > 1
+        else providers[0][1]
+    )
 
 
 def build_llm(settings: Settings):
@@ -168,6 +192,9 @@ def build_llm(settings: Settings):
             max_retries=settings.llm_max_retries,
             max_tokens=settings.llm_max_tokens,
             label_prefix="openai",
+            failover_name="primary-openai",
+            failure_threshold=settings.llm_failover_failure_threshold,
+            cooldown_sec=settings.llm_failover_cooldown_sec,
         )
     if settings.llm_provider is LLMProviderName.MIMO:
         key = settings.mimo_api_key or ""
@@ -195,6 +222,9 @@ def build_llm(settings: Settings):
             keep_alive=settings.local_keep_alive,
             think=settings.local_think,
             label_prefix="local",
+            failover_name="primary-local",
+            failure_threshold=settings.llm_failover_failure_threshold,
+            cooldown_sec=settings.llm_failover_cooldown_sec,
         )
     raise RuntimeError(f"Unsupported LLM provider: {settings.llm_provider}")
 
@@ -224,6 +254,9 @@ def build_self_improvement_llm(settings: Settings, primary_llm):
             max_retries=settings.llm_max_retries,
             max_tokens=max_tokens,
             label_prefix="self-improvement-openai",
+            failover_name="self-improvement-openai",
+            failure_threshold=settings.llm_failover_failure_threshold,
+            cooldown_sec=settings.llm_failover_cooldown_sec,
         )
 
     if settings.llm_provider is LLMProviderName.LOCAL:
@@ -241,6 +274,9 @@ def build_self_improvement_llm(settings: Settings, primary_llm):
             keep_alive=settings.self_improvement_local_keep_alive,
             think=settings.self_improvement_local_think,
             label_prefix="self-improvement-local",
+            failover_name="self-improvement-local",
+            failure_threshold=settings.llm_failover_failure_threshold,
+            cooldown_sec=settings.llm_failover_cooldown_sec,
         )
 
     if settings.llm_provider is LLMProviderName.MIMO:
@@ -376,6 +412,25 @@ def build_skillbook(settings: Settings) -> SkillBook:
         index_path=Path(settings.skillbook_index_path),
         max_evidence=settings.skillbook_max_evidence,
     )
+
+
+def _persist_llm_failover_snapshot(settings: Settings) -> None:
+    snapshots = failover_runtime_snapshot()
+    if not snapshots:
+        return
+    payload = {
+        "updated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "provider": settings.llm_provider.value,
+        "snapshots": snapshots,
+    }
+    out_path = Path(settings.llm_failover_runtime_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path.replace(out_path)
+    except Exception as exc:
+        log.warning("Failed to persist LLM failover snapshot: %s", exc)
 
 
 async def smoke_ctrader_worker(settings: Settings) -> None:
@@ -2893,6 +2948,7 @@ async def learning_loop(settings: Settings) -> None:
             except Exception:
                 log.exception("Failed to persist runtime failure note")
             persist_runtime_state()
+        _persist_llm_failover_snapshot(settings)
         await asyncio.sleep(settings.loop_interval_sec)
 
 

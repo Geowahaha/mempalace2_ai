@@ -58,6 +58,9 @@ class ConfigTests(unittest.TestCase):
                         "SELF_IMPROVEMENT_LOCAL_NUM_CTX=512",
                         "SELF_IMPROVEMENT_LOCAL_KEEP_ALIVE=0s",
                         "SELF_IMPROVEMENT_LOCAL_THINK=false",
+                        "LLM_FAILOVER_FAILURE_THRESHOLD=3",
+                        "LLM_FAILOVER_COOLDOWN_SEC=45",
+                        "LLM_FAILOVER_RUNTIME_PATH=./data/tencent_failover_runtime.json",
                     ]
                 )
                 + "\n",
@@ -75,6 +78,9 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(settings.self_improvement_local_num_ctx, 512)
             self.assertEqual(settings.self_improvement_local_keep_alive, "0s")
             self.assertFalse(settings.self_improvement_local_think)
+            self.assertEqual(settings.llm_failover_failure_threshold, 3)
+            self.assertEqual(settings.llm_failover_cooldown_sec, 45.0)
+            self.assertEqual(settings.llm_failover_runtime_path.name, "tencent_failover_runtime.json")
 
 
 if __name__ == "__main__":

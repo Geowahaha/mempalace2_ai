@@ -403,6 +403,23 @@ async def runtime_state() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/llm/failover")
+async def llm_failover() -> Dict[str, Any]:
+    path = Path(get_settings().llm_failover_runtime_path)
+    if not path.is_file():
+        return {"ok": False, "status": "missing", "path": str(path), "snapshots": {}}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "status": "loaded",
+        "path": str(path),
+        "data": payload,
+    }
+
+
 @app.get("/logs/tail")
 async def logs_tail(name: str = "loop_out", lines: int = 80) -> Dict[str, Any]:
     if name not in _LOG_FILES:
@@ -447,6 +464,7 @@ async def dashboard() -> str:
     <a href="/broker/health" target="_blank">/broker/health</a>,
     <a href="/broker/reconcile" target="_blank">/broker/reconcile</a>,
     <a href="/runtime/state" target="_blank">/runtime/state</a>,
+    <a href="/llm/failover" target="_blank">/llm/failover</a>,
     <a href="/memory/taxonomy" target="_blank">/memory/taxonomy</a>,
     <a href="/memory/wakeup" target="_blank">/memory/wakeup</a>,
     <a href="/memory/intelligence" target="_blank">/memory/intelligence</a>,
@@ -462,6 +480,7 @@ async def dashboard() -> str:
     <div class="card"><h3>Broker Health</h3><pre id="health">loading...</pre></div>
     <div class="card"><h3>Reconcile</h3><pre id="reconcile">loading...</pre></div>
     <div class="card"><h3>Runtime State</h3><pre id="runtime">loading...</pre></div>
+    <div class="card"><h3>LLM Failover</h3><pre id="llmfailover">loading...</pre></div>
     <div class="card"><h3>Memory Taxonomy</h3><pre id="taxonomy">loading...</pre></div>
     <div class="card"><h3>Memory Intelligence</h3><pre id="intelligence">loading...</pre></div>
     <div class="card" style="grid-column: 1 / -1;"><h3>Wake Up Context</h3><pre id="wakeup">loading...</pre></div>
@@ -475,11 +494,12 @@ async def dashboard() -> str:
     }
     async function refresh() {
       try {
-        const [status, health, reconcile, runtime, taxonomy, intelligence, wakeup, dailybrief, looplog] = await Promise.all([
+        const [status, health, reconcile, runtime, llmfailover, taxonomy, intelligence, wakeup, dailybrief, looplog] = await Promise.all([
           loadJson('/status'),
           loadJson('/broker/health'),
           loadJson('/broker/reconcile'),
           loadJson('/runtime/state'),
+          loadJson('/llm/failover'),
           loadJson('/memory/taxonomy'),
           loadJson('/memory/intelligence'),
           loadJson('/memory/wakeup'),
@@ -490,6 +510,7 @@ async def dashboard() -> str:
         document.getElementById('health').textContent = JSON.stringify(health, null, 2);
         document.getElementById('reconcile').textContent = JSON.stringify(reconcile, null, 2);
         document.getElementById('runtime').textContent = JSON.stringify(runtime, null, 2);
+        document.getElementById('llmfailover').textContent = JSON.stringify(llmfailover, null, 2);
         document.getElementById('taxonomy').textContent = JSON.stringify(taxonomy, null, 2);
         document.getElementById('intelligence').textContent = JSON.stringify(intelligence, null, 2);
         document.getElementById('wakeup').textContent = wakeup.text || JSON.stringify(wakeup, null, 2);
