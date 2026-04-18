@@ -162,8 +162,8 @@ grep -q '^BACKTEST_LEARNING_INTERVAL_SEC=' trading_ai/.env && \
   sed -i 's/^BACKTEST_LEARNING_INTERVAL_SEC=.*/BACKTEST_LEARNING_INTERVAL_SEC=21600/' trading_ai/.env || \
   echo 'BACKTEST_LEARNING_INTERVAL_SEC=21600' >> trading_ai/.env
 grep -q '^BACKTEST_LEARNING_SOURCE_POLICY=' trading_ai/.env && \
-  sed -i 's/^BACKTEST_LEARNING_SOURCE_POLICY=.*/BACKTEST_LEARNING_SOURCE_POLICY=real_only/' trading_ai/.env || \
-  echo 'BACKTEST_LEARNING_SOURCE_POLICY=real_only' >> trading_ai/.env
+  sed -i 's/^BACKTEST_LEARNING_SOURCE_POLICY=.*/BACKTEST_LEARNING_SOURCE_POLICY=real_first/' trading_ai/.env || \
+  echo 'BACKTEST_LEARNING_SOURCE_POLICY=real_first' >> trading_ai/.env
 sudo systemctl restart mempalace-trader
 ```
 

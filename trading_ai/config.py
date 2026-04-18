@@ -1207,7 +1207,7 @@ class Settings(BaseSettings):
         validation_alias="BACKTEST_LEARNING_TIMEFRAME",
     )
     backtest_learning_source_policy: Literal["real_first", "real_only", "candle_only"] = Field(
-        default="real_only",
+        default="real_first",
         validation_alias="BACKTEST_LEARNING_SOURCE_POLICY",
         description="Historical source priority used by automated replays.",
     )

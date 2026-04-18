@@ -378,10 +378,35 @@ class BacktestLearningSupervisor:
         start_day = end_day - timedelta(days=lookback_days - 1)
         return start_day.isoformat(), end_day.isoformat(), tz_name
 
+    def _resolve_backtest_root(self) -> Path:
+        configured_root = Path(self._settings.backtest_learning_dexter_root).resolve()
+        if configured_root.exists():
+            return configured_root
+
+        source_policy = str(self._settings.backtest_learning_source_policy or "real_first").strip().lower()
+        repo_root = self._repo_root.resolve()
+        candle_db = repo_root / "backtest" / "candle_data.db"
+        ctrader_db = repo_root / "data" / "ctrader_openapi.db"
+
+        fallback_ok = False
+        if source_policy in {"real_first", "candle_only"} and candle_db.is_file():
+            fallback_ok = True
+        elif source_policy == "real_only" and ctrader_db.is_file():
+            fallback_ok = True
+
+        if fallback_ok:
+            log.warning(
+                "BacktestLearning: configured dexter root missing (%s); using repo root fallback (%s) for source_policy=%s",
+                configured_root,
+                repo_root,
+                source_policy,
+            )
+            return repo_root
+
+        raise RuntimeError(f"backtest_dexter_root_missing:{configured_root}")
+
     def _run_backtest_subprocess(self, *, start_day: str, end_day: str, tz_name: str) -> Dict[str, Any]:
-        dexter_root = Path(self._settings.backtest_learning_dexter_root)
-        if not dexter_root.exists():
-            raise RuntimeError(f"backtest_dexter_root_missing:{dexter_root}")
+        dexter_root = self._resolve_backtest_root()
         output_root = Path(self._settings.backtest_learning_output_root)
         output_root.mkdir(parents=True, exist_ok=True)
 

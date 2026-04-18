@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
-from trading_ai.core.backtest_learning import build_adaptive_policy_from_backtest
+from trading_ai.config import Settings
+from trading_ai.core.backtest_learning import BacktestLearningSupervisor, build_adaptive_policy_from_backtest
 
 
 class BacktestLearningPolicyTests(unittest.TestCase):
@@ -115,6 +118,58 @@ class BacktestLearningPolicyTests(unittest.TestCase):
         )
         self.assertEqual(policy.get("mode"), "relax")
         self.assertEqual(dict(policy.get("effective_overrides") or {}), {})
+
+    def test_supervisor_falls_back_to_repo_root_when_candle_data_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = (root / "data").resolve()
+            data_dir.mkdir(parents=True, exist_ok=True)
+            repo_root = (root / "repo").resolve()
+            (repo_root / "backtest").mkdir(parents=True, exist_ok=True)
+            (repo_root / "backtest" / "candle_data.db").write_text("", encoding="utf-8")
+            env_path = root / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        f"DATA_DIR={data_dir}",
+                        "BACKTEST_LEARNING_ENABLED=true",
+                        "BACKTEST_LEARNING_SOURCE_POLICY=real_first",
+                        f"BACKTEST_LEARNING_DEXTER_ROOT={root / 'missing_dexter'}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            supervisor = BacktestLearningSupervisor(settings=settings)
+            supervisor._repo_root = repo_root
+            self.assertEqual(supervisor._resolve_backtest_root(), repo_root)
+
+    def test_supervisor_resolve_root_raises_when_no_source_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = (root / "data").resolve()
+            data_dir.mkdir(parents=True, exist_ok=True)
+            repo_root = (root / "repo").resolve()
+            repo_root.mkdir(parents=True, exist_ok=True)
+            env_path = root / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        f"DATA_DIR={data_dir}",
+                        "BACKTEST_LEARNING_ENABLED=true",
+                        "BACKTEST_LEARNING_SOURCE_POLICY=real_only",
+                        f"BACKTEST_LEARNING_DEXTER_ROOT={root / 'missing_dexter'}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            supervisor = BacktestLearningSupervisor(settings=settings)
+            supervisor._repo_root = repo_root
+            with self.assertRaises(RuntimeError):
+                supervisor._resolve_backtest_root()
 
 
 if __name__ == "__main__":
