@@ -66,7 +66,7 @@ from trading_ai.integrations.ctrader import CTraderBroker, CTraderConfig
 from trading_ai.integrations.ctrader_dexter_worker import CTraderDexterWorkerBroker
 from trading_ai.integrations.failover import FailoverProvider, failover_runtime_snapshot
 from trading_ai.integrations.mimo import MiMoProvider
-from trading_ai.integrations.ollama import OllamaProvider
+from trading_ai.integrations.ollama import OllamaProvider, list_ollama_models, select_available_models
 from trading_ai.integrations.openai_adapter import OpenAIProvider
 from trading_ai.utils.logger import get_logger
 
@@ -146,6 +146,26 @@ def _build_local_chain(
     failure_threshold: int,
     cooldown_sec: float,
 ):
+    installed_models = list_ollama_models(
+        settings.local_base_url,
+        timeout_sec=min(max(float(timeout_sec), 1.0), 5.0),
+    )
+    selected_models, missing_models, used_auto_fallback = select_available_models(models, installed_models)
+    if not selected_models:
+        selected_models = list(models)
+    if missing_models:
+        log.warning(
+            "%s configured models missing in Ollama: %s",
+            label_prefix.upper(),
+            missing_models,
+        )
+    if used_auto_fallback and selected_models:
+        log.warning(
+            "%s auto-fallback to installed model=%s (configured models unavailable)",
+            label_prefix.upper(),
+            selected_models[0],
+        )
+
     providers = [
         (
             f"{label_prefix}:{model}",
@@ -160,7 +180,7 @@ def _build_local_chain(
                 think=think,
             ),
         )
-        for model in models
+        for model in selected_models
     ]
     log.info("%s failover chain: %s", label_prefix.upper(), [label for label, _ in providers])
     return (

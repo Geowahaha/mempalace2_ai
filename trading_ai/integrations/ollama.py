@@ -4,7 +4,7 @@ import asyncio
 import json
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from trading_ai.utils.logger import get_logger
 
@@ -37,6 +37,54 @@ def _normalize_ollama_base_url(base_url: Optional[str]) -> str:
     if root.lower().endswith("/v1"):
         root = root[:-3].rstrip("/")
     return root or "http://127.0.0.1:11434"
+
+
+def list_ollama_models(api_base_url: Optional[str], *, timeout_sec: float = 5.0) -> List[str]:
+    """Best-effort discovery of installed Ollama models via /api/tags."""
+    base = _normalize_ollama_base_url(api_base_url)
+    api_url = base + "/api/tags"
+    req = urllib.request.Request(api_url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=max(1.0, float(timeout_sec))) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+        payload = json.loads(raw or "{}")
+    except Exception as exc:
+        log.warning("Unable to query Ollama model list from %s: %s", api_url, exc)
+        return []
+
+    rows = payload.get("models")
+    if not isinstance(rows, list):
+        return []
+
+    models: List[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if name and name not in models:
+            models.append(name)
+    return models
+
+
+def select_available_models(
+    configured_models: List[str],
+    installed_models: List[str],
+) -> Tuple[List[str], List[str], bool]:
+    """Return selected models, missing configured models, and auto-fallback flag."""
+    configured = [str(model or "").strip() for model in configured_models if str(model or "").strip()]
+    installed = [str(model or "").strip() for model in installed_models if str(model or "").strip()]
+    if not configured:
+        return (installed[:1] if installed else []), [], bool(installed)
+
+    if not installed:
+        return configured, [], False
+
+    installed_set = set(installed)
+    selected = [model for model in configured if model in installed_set]
+    missing = [model for model in configured if model not in installed_set]
+    if selected:
+        return selected, missing, False
+    return [installed[0]], missing, True
 
 
 class OllamaProvider:

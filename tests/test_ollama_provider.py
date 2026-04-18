@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from trading_ai.integrations.ollama import OllamaProvider
+from trading_ai.integrations.ollama import OllamaProvider, list_ollama_models, select_available_models
 
 
 class _FakeResponse:
@@ -23,6 +23,42 @@ class _FakeResponse:
 
 
 class OllamaProviderTests(unittest.TestCase):
+    def test_select_available_models_prefers_installed_and_flags_missing(self) -> None:
+        selected, missing, auto_fallback = select_available_models(
+            ["qwen2.5:1.5b", "gemma3:1b-it-qat"],
+            ["qwen2.5:1.5b", "llama3.2:3b"],
+        )
+        self.assertEqual(selected, ["qwen2.5:1.5b"])
+        self.assertEqual(missing, ["gemma3:1b-it-qat"])
+        self.assertFalse(auto_fallback)
+
+    def test_select_available_models_auto_fallback_when_all_configured_missing(self) -> None:
+        selected, missing, auto_fallback = select_available_models(
+            ["gemma3:1b-it-qat"],
+            ["qwen2.5:1.5b"],
+        )
+        self.assertEqual(selected, ["qwen2.5:1.5b"])
+        self.assertEqual(missing, ["gemma3:1b-it-qat"])
+        self.assertTrue(auto_fallback)
+
+    def test_list_ollama_models_reads_tags(self) -> None:
+        def fake_urlopen(request, timeout):
+            self.assertEqual(request.full_url, "http://127.0.0.1:11434/api/tags")
+            self.assertEqual(timeout, 3.0)
+            return _FakeResponse(
+                {
+                    "models": [
+                        {"name": "qwen2.5:1.5b"},
+                        {"name": "gemma3:1b"},
+                        {"name": "qwen2.5:1.5b"},
+                    ]
+                }
+            )
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            models = list_ollama_models("http://127.0.0.1:11434/v1", timeout_sec=3.0)
+        self.assertEqual(models, ["qwen2.5:1.5b", "gemma3:1b"])
+
     def test_provider_normalizes_v1_base_url_and_builds_payload(self) -> None:
         captured = {}
 

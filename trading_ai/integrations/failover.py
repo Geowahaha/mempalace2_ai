@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 from threading import RLock
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from trading_ai.utils.logger import get_logger
 
@@ -45,6 +45,7 @@ class FailoverProvider:
         self._name = str(name or f"failover-{id(self)}").strip()
         self._failure_threshold = max(1, int(failure_threshold))
         self._cooldown_sec = max(0.0, float(cooldown_sec))
+        self._max_dynamic_cooldown_sec = max(self._cooldown_sec, 600.0)
         self._lock = RLock()
         self._stats: Dict[str, Dict[str, Any]] = {}
         now_ts = time.time()
@@ -102,7 +103,14 @@ class FailoverProvider:
             stat["latency_total_ms"] = float(stat.get("latency_total_ms") or 0.0) + float(latency_ms)
             stat["circuit_open_until_ts"] = 0.0
 
-    def _mark_failure(self, label: str, exc: Exception, latency_ms: float) -> float:
+    def _mark_failure(
+        self,
+        label: str,
+        exc: Exception,
+        latency_ms: float,
+        *,
+        cooldown_override_sec: Optional[float] = None,
+    ) -> float:
         now_ts = time.time()
         with self._lock:
             stat = self._stats.get(label)
@@ -115,8 +123,18 @@ class FailoverProvider:
             stat["last_error_ts"] = now_ts
             stat["last_latency_ms"] = float(latency_ms)
             stat["latency_total_ms"] = float(stat.get("latency_total_ms") or 0.0) + float(latency_ms)
-            if int(stat["consecutive_failures"]) >= self._failure_threshold:
-                stat["circuit_open_until_ts"] = now_ts + self._cooldown_sec
+            consecutive = int(stat.get("consecutive_failures") or 0)
+            if consecutive >= self._failure_threshold:
+                if cooldown_override_sec is not None:
+                    cooldown_to_use = max(0.0, float(cooldown_override_sec))
+                else:
+                    # Exponential cooldown prevents hot-loop retries on persistent failures.
+                    extra_failures = max(0, consecutive - self._failure_threshold)
+                    cooldown_to_use = min(
+                        self._cooldown_sec * (2**extra_failures),
+                        self._max_dynamic_cooldown_sec,
+                    )
+                stat["circuit_open_until_ts"] = now_ts + cooldown_to_use
             return float(stat.get("circuit_open_until_ts") or 0.0)
 
     def snapshot(self) -> Dict[str, Any]:
@@ -195,7 +213,17 @@ class FailoverProvider:
                 return result
             except Exception as exc:
                 latency_ms = (time.perf_counter() - started) * 1000.0
-                open_until_ts = self._mark_failure(label, exc, latency_ms)
+                message_lc = str(exc).lower()
+                cooldown_override_sec: Optional[float] = None
+                if "http 404" in message_lc and "model" in message_lc and "not found" in message_lc:
+                    cooldown_override_sec = max(self._cooldown_sec, 600.0)
+
+                open_until_ts = self._mark_failure(
+                    label,
+                    exc,
+                    latency_ms,
+                    cooldown_override_sec=cooldown_override_sec,
+                )
                 msg = f"{label}: {type(exc).__name__}: {exc}"
                 errors.append(msg)
                 log.warning("LLM candidate failed: %s", msg)

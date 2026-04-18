@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import unittest
 
 from trading_ai.integrations.failover import (
@@ -72,6 +73,40 @@ class FailoverProviderTests(unittest.TestCase):
         self.assertGreaterEqual(candidates["broken"]["skipped_circuit_open"], 1)
         self.assertTrue(candidates["broken"]["circuit_open"])
         self.assertEqual(candidates["healthy"]["successes"], 2)
+
+    def test_failure_cooldown_scales_with_consecutive_failures(self) -> None:
+        fail = _AlwaysFailProvider()
+        provider = FailoverProvider(
+            [("broken", fail)],
+            name="unit-dynamic-cooldown",
+            failure_threshold=1,
+            cooldown_sec=10,
+        )
+
+        first_open_until = provider._mark_failure("broken", RuntimeError("boom"), 1.0)
+        second_open_until = provider._mark_failure("broken", RuntimeError("boom"), 1.0)
+
+        first_wait = first_open_until - time.time()
+        second_wait = second_open_until - time.time()
+        self.assertGreater(second_wait, first_wait + 8.0)
+
+    def test_model_not_found_uses_long_cooldown_override(self) -> None:
+        fail = _AlwaysFailProvider()
+        provider = FailoverProvider(
+            [("broken", fail)],
+            name="unit-not-found-cooldown",
+            failure_threshold=1,
+            cooldown_sec=20,
+        )
+
+        open_until = provider._mark_failure(
+            "broken",
+            RuntimeError("Ollama HTTP 404: {\"error\":\"model 'foo' not found\"}"),
+            1.0,
+            cooldown_override_sec=600.0,
+        )
+        remaining = open_until - time.time()
+        self.assertGreaterEqual(remaining, 590.0)
 
 
 if __name__ == "__main__":
