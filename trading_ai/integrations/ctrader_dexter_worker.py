@@ -67,16 +67,22 @@ def _resolve_worker_script(settings: Settings) -> Path:
 
 def _resolve_worker_python(settings: Settings, dexter_root: Path) -> str:
     """Prefer Dexter repo venv (Twisted + ctrader Open API); Mempalac venv usually lacks them."""
-    if settings.ctrader_worker_python:
-        p = Path(settings.ctrader_worker_python)
+    raw_python = str(settings.ctrader_worker_python or "").strip().strip('"').strip("'")
+    if raw_python:
+        p = Path(raw_python).expanduser()
         if p.is_file():
             return str(p.resolve())
+        rel = (dexter_root / p).resolve()
+        if rel.is_file():
+            return str(rel)
     search_roots = [
         dexter_root,
         Path(__file__).resolve().parent.parent,
         Path(__file__).resolve().parent,
     ]
     rel_candidates = (
+        Path(".venv") / "bin" / "python",
+        Path("venv") / "bin" / "python",
         Path(".venv") / "Scripts" / "python.exe",
         Path("venv") / "Scripts" / "python.exe",
     )
