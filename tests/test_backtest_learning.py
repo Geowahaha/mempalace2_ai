@@ -245,6 +245,41 @@ class BacktestLearningPolicyTests(unittest.TestCase):
             self.assertEqual(run_window.get("live_symbol"), "XAUUSD")
             self.assertEqual(run_window.get("symbol_fallback_from"), "XAUUSD")
 
+    def test_run_once_no_history_returns_hold_policy_without_exception(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = (root / "data").resolve()
+            data_dir.mkdir(parents=True, exist_ok=True)
+            env_path = root / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        f"DATA_DIR={data_dir}",
+                        "SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_ENABLED=true",
+                        "BACKTEST_LEARNING_SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_FALLBACK_SYMBOL=BTCUSD",
+                        "BACKTEST_LEARNING_POLICY_APPLY_ENABLED=true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            supervisor = BacktestLearningSupervisor(settings=settings)
+            supervisor._compute_window = lambda: ("2026-04-11", "2026-04-18", "UTC")  # type: ignore[method-assign]
+
+            def _fake_run_backtest_subprocess(*, start_day: str, end_day: str, tz_name: str, symbol: str) -> dict:
+                raise RuntimeError(f"No historical bars found for {symbol} between A and B")
+
+            supervisor._run_backtest_subprocess = _fake_run_backtest_subprocess  # type: ignore[method-assign]
+            policy = supervisor._run_once_sync()
+
+            self.assertEqual(policy.get("mode"), "hold")
+            self.assertEqual(dict(policy.get("effective_overrides") or {}), {})
+            notes = [str(item) for item in list(policy.get("notes") or [])]
+            self.assertTrue(any(note.startswith("skip_no_history:") for note in notes))
+
 
 if __name__ == "__main__":
     unittest.main()

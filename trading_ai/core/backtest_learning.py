@@ -494,6 +494,40 @@ class BacktestLearningSupervisor:
         self._summary_path.parent.mkdir(parents=True, exist_ok=True)
         self._summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    def _build_no_data_policy(
+        self,
+        *,
+        baseline: Dict[str, Any],
+        symbol: str,
+        reason: str,
+    ) -> Dict[str, Any]:
+        return {
+            "generated_utc": _iso_utc(),
+            "mode": "hold",
+            "quality_gate": {
+                "passed": False,
+                "min_closed_trades": int(self._settings.backtest_learning_min_closed_trades),
+                "min_win_rate": float(self._settings.backtest_learning_min_win_rate),
+                "min_avg_profit": float(self._settings.backtest_learning_min_avg_profit),
+                "max_drawdown": float(self._settings.backtest_learning_max_drawdown),
+                "closed_trades": 0,
+                "win_rate": 0.0,
+                "avg_profit": 0.0,
+                "max_drawdown_observed": 0.0,
+            },
+            "metrics": {
+                "total_decisions": 0,
+                "hard_filter_blocks": 0,
+                "hard_filter_block_ratio": 0.0,
+                "shift_applied": 0.0,
+            },
+            "baseline": dict(baseline),
+            "recommended": dict(baseline),
+            "effective_overrides": {},
+            "policy_apply_enabled": bool(self._settings.backtest_learning_policy_apply_enabled),
+            "notes": [f"skip_no_history:{symbol}", reason],
+        }
+
     def _run_once_sync(self) -> Dict[str, Any]:
         start_day, end_day, tz_name = self._compute_window()
         live_symbol = str(self._settings.symbol or "").strip().upper()
@@ -501,6 +535,9 @@ class BacktestLearningSupervisor:
         fallback_symbol = str(self._settings.backtest_learning_fallback_symbol or "").strip().upper()
         active_symbol = primary_symbol
         fallback_from = ""
+        baseline = adaptive_hard_filter_baseline(self._settings)
+        report: Optional[Dict[str, Any]] = None
+        no_history_reason = ""
 
         try:
             report = self._run_backtest_subprocess(
@@ -510,34 +547,53 @@ class BacktestLearningSupervisor:
                 symbol=active_symbol,
             )
         except Exception as exc:
-            if self._looks_like_no_history_error(exc) and fallback_symbol and fallback_symbol != active_symbol:
-                log.warning(
-                    "BacktestLearning: no bars for symbol=%s; retrying with fallback_symbol=%s",
-                    active_symbol,
-                    fallback_symbol,
-                )
-                fallback_from = active_symbol
-                active_symbol = fallback_symbol
-                report = self._run_backtest_subprocess(
-                    start_day=start_day,
-                    end_day=end_day,
-                    tz_name=tz_name,
-                    symbol=active_symbol,
-                )
+            if self._looks_like_no_history_error(exc):
+                no_history_reason = str(exc)
+                if fallback_symbol and fallback_symbol != active_symbol:
+                    log.warning(
+                        "BacktestLearning: no bars for symbol=%s; retrying with fallback_symbol=%s",
+                        active_symbol,
+                        fallback_symbol,
+                    )
+                    fallback_from = active_symbol
+                    active_symbol = fallback_symbol
+                    try:
+                        report = self._run_backtest_subprocess(
+                            start_day=start_day,
+                            end_day=end_day,
+                            tz_name=tz_name,
+                            symbol=active_symbol,
+                        )
+                        no_history_reason = ""
+                    except Exception as fallback_exc:
+                        if self._looks_like_no_history_error(fallback_exc):
+                            no_history_reason = str(fallback_exc)
+                        else:
+                            raise
             else:
                 raise
 
-        baseline = adaptive_hard_filter_baseline(self._settings)
-        policy = build_adaptive_policy_from_backtest(
-            report=report,
-            baseline=baseline,
-            min_closed_trades=int(self._settings.backtest_learning_min_closed_trades),
-            min_win_rate=float(self._settings.backtest_learning_min_win_rate),
-            min_avg_profit=float(self._settings.backtest_learning_min_avg_profit),
-            max_drawdown=float(self._settings.backtest_learning_max_drawdown),
-            max_shift=float(self._settings.backtest_learning_policy_max_shift),
-            apply_enabled=bool(self._settings.backtest_learning_policy_apply_enabled),
-        )
+        if report is None:
+            log.warning(
+                "BacktestLearning: no historical bars for symbol=%s; applying safe hold policy",
+                active_symbol,
+            )
+            policy = self._build_no_data_policy(
+                baseline=baseline,
+                symbol=active_symbol,
+                reason=no_history_reason or "no_history",
+            )
+        else:
+            policy = build_adaptive_policy_from_backtest(
+                report=report,
+                baseline=baseline,
+                min_closed_trades=int(self._settings.backtest_learning_min_closed_trades),
+                min_win_rate=float(self._settings.backtest_learning_min_win_rate),
+                min_avg_profit=float(self._settings.backtest_learning_min_avg_profit),
+                max_drawdown=float(self._settings.backtest_learning_max_drawdown),
+                max_shift=float(self._settings.backtest_learning_policy_max_shift),
+                apply_enabled=bool(self._settings.backtest_learning_policy_apply_enabled),
+            )
         policy["run_window"] = {
             "start_day": start_day,
             "end_day": end_day,
@@ -551,12 +607,13 @@ class BacktestLearningSupervisor:
         }
         if fallback_from:
             policy["run_window"]["symbol_fallback_from"] = fallback_from
-        report_mode = str(report.get("mode") or "")
-        run_id = str(report.get("run_id") or "")
-        if run_id:
-            policy["run_id"] = run_id
-        if report_mode:
-            policy["backtest_mode"] = report_mode
+        if report:
+            report_mode = str(report.get("mode") or "")
+            run_id = str(report.get("run_id") or "")
+            if run_id:
+                policy["run_id"] = run_id
+            if report_mode:
+                policy["backtest_mode"] = report_mode
         _write_json(self._policy_path, policy)
         self._write_summary(policy)
         log.info(
