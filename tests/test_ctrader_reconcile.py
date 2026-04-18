@@ -4,7 +4,11 @@ import asyncio
 from types import SimpleNamespace
 import unittest
 
-from trading_ai.integrations.ctrader_dexter_worker import _compact_broker_comment
+from trading_ai.integrations.ctrader_dexter_worker import (
+    _compact_broker_comment,
+    _worker_retry_attempts,
+    _worker_retry_sleep_sec,
+)
 from trading_ai.main import _reconcile_open_positions_from_broker
 
 
@@ -22,6 +26,12 @@ class ReconcileOpenPositionsTests(unittest.TestCase):
     def test_compact_broker_comment_keeps_short_safe_tag(self):
         text = "entry_override:opp=0.701:risk=0.484:edge=0.216|The market structure and trend direction are clearly downward"
         self.assertEqual(_compact_broker_comment(text), "entry_override")
+
+    def test_worker_retry_policy_keeps_capture_market_fast(self):
+        self.assertEqual(_worker_retry_attempts("capture_market"), 2)
+        self.assertEqual(_worker_retry_attempts("get_trendbars"), 3)
+        self.assertEqual(_worker_retry_attempts("execute"), 1)
+        self.assertLess(_worker_retry_sleep_sec("capture_market", 1), 1.0)
 
     def test_converts_ctrader_raw_volume_back_to_lots(self):
         broker = _StubBroker(

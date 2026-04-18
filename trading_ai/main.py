@@ -2053,6 +2053,7 @@ async def learning_loop(settings: Settings) -> None:
             probe_candidate_decision: Optional[Decision] = None
             probe_candidate_bucket = ""
             probe_candidate_reason = ""
+            pre_filter_started_at = time.perf_counter()
             pre_llm_veto = _hard_market_filters(
                 features,
                 risk,
@@ -2067,6 +2068,7 @@ async def learning_loop(settings: Settings) -> None:
                 matches=skill_matches,
                 settings=settings,
             )
+            _mark_stage_timing(stage_ms, "decision_pre_filter_ms", pre_filter_started_at)
             if pre_llm_veto and not loss_streak_override:
                 decision = Decision(
                     action="HOLD",
@@ -2074,6 +2076,7 @@ async def learning_loop(settings: Settings) -> None:
                     reason=f"pre_llm_hard_filter:{pre_llm_veto}",
                     raw={"pre_llm_hard_filter": pre_llm_veto},
                 )
+                policy_started_at = time.perf_counter()
                 entry_override = evaluate_entry_hold_override(
                     anticipated_action=anticipated_action,
                     anticipated_assessment=anticipated_assessment,
@@ -2109,6 +2112,15 @@ async def learning_loop(settings: Settings) -> None:
                         float(entry_override.get("risk_score") or 0.0),
                         float(entry_override.get("edge_score") or 0.0),
                     )
+                elif bool(settings.performance_stage_telemetry_enabled):
+                    log.info(
+                        "Hard-filter veto retained HOLD filter=%s blocked=%s opp=%.3f risk=%.3f edge=%.3f",
+                        str(pre_llm_veto),
+                        str(entry_override.get("blocked_reason") or "unknown"),
+                        float(entry_override.get("opportunity_score") or 0.0),
+                        float(entry_override.get("risk_score") or 0.0),
+                        float(entry_override.get("edge_score") or 0.0),
+                    )
                 if (
                     decision.action == "HOLD"
                     and settings.shadow_probe_enabled
@@ -2130,13 +2142,17 @@ async def learning_loop(settings: Settings) -> None:
                         )
                     probe_candidate_bucket = _reason_bucket(decision.reason)
                     probe_candidate_reason = decision.reason
+                _mark_stage_timing(stage_ms, "decision_policy_ms", policy_started_at)
             else:
+                wake_context_started_at = time.perf_counter()
                 wake_up_context = memory.build_wake_up_context(
                     symbol=settings.symbol,
                     session=str(features.get("session") or "") or None,
                     top_k=settings.memory_wakeup_top_k,
                     note_top_k=settings.memory_note_top_k,
                 )
+                _mark_stage_timing(stage_ms, "decision_wakeup_context_ms", wake_context_started_at)
+                llm_started_at = time.perf_counter()
                 decision = await agent.decide(
                     market,
                     features,
@@ -2147,6 +2163,8 @@ async def learning_loop(settings: Settings) -> None:
                     skill_context=skill_context,
                     team_brief=team_brief,
                 )
+                _mark_stage_timing(stage_ms, "decision_llm_ms", llm_started_at)
+                policy_started_at = time.perf_counter()
                 if settings.self_improvement_enabled:
                     decision, _ = _apply_skill_feedback(
                         decision,
@@ -2193,6 +2211,7 @@ async def learning_loop(settings: Settings) -> None:
                         float(entry_override.get("risk_score") or 0.0),
                         float(entry_override.get("edge_score") or 0.0),
                     )
+                _mark_stage_timing(stage_ms, "decision_policy_ms", policy_started_at)
             _mark_stage_timing(stage_ms, "decision_stack_ms", stage_started_at)
             if settings.performance_monitor_enabled:
                 perf_mon.update_on_signal(decision)

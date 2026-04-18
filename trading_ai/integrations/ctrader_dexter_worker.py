@@ -150,6 +150,26 @@ def _worker_mode_allows_retry(mode: str) -> bool:
     return mode in {"health", "reconcile", "capture_market", "accounts", "get_trendbars"}
 
 
+def _worker_retry_attempts(mode: str) -> int:
+    token = str(mode or "").strip().lower()
+    if not _worker_mode_allows_retry(token):
+        return 1
+    if token == "capture_market":
+        # Keep market quote path snappy. get_market_data has fallback handling.
+        return 2
+    if token in {"get_trendbars", "health"}:
+        return 3
+    return 5
+
+
+def _worker_retry_sleep_sec(mode: str, attempt_number: int) -> float:
+    token = str(mode or "").strip().lower()
+    step = max(1, int(attempt_number))
+    if token == "capture_market":
+        return min(0.9, 0.25 * step)
+    return 1.0 + step
+
+
 def _worker_result_is_transient(result: Dict[str, Any]) -> bool:
     status = str(result.get("status") or "").strip().lower()
     message = str(result.get("message") or "").strip().lower()
@@ -302,7 +322,7 @@ class CTraderDexterWorkerBroker(Broker):
         }
 
     def _run_worker(self, mode: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        attempts = 5 if _worker_mode_allows_retry(mode) else 1
+        attempts = _worker_retry_attempts(mode)
         last_result: Dict[str, Any] = {
             "ok": False,
             "status": "worker_not_run",
@@ -412,7 +432,7 @@ class CTraderDexterWorkerBroker(Broker):
                 return last_result
             attempt += 1
             if attempt < attempts:
-                sleep_sec = 1.0 + attempt
+                sleep_sec = _worker_retry_sleep_sec(mode, attempt)
                 log.warning(
                     "Transient cTrader worker failure mode=%s attempt=%s/%s status=%s message=%s; retrying in %.1fs",
                     mode,
@@ -595,31 +615,11 @@ class CTraderDexterWorkerBroker(Broker):
             "duration_sec": int(self._settings.ctrader_capture_duration_sec),
             "max_events": 30,
         }
-        last_message = "capture_market failed"
-        for attempt in range(3):
-            data = await asyncio.to_thread(self._run_worker, "capture_market", payload)
-            snap = self._extract_latest_snapshot(token, data)
-            if snap is not None:
-                return snap
-            last_message = str(data.get("message") or data.get("status") or "capture_market failed")
-            status = str(data.get("status") or "").strip().lower()
-            message = str(data.get("message") or "").strip().lower()
-            error_code = str(data.get("error_code") or "").strip().lower()
-            if status in {"app_auth_failed", "account_auth_failed"} or error_code == "cant_route_request" or "cannot route request" in message:
-                log.warning(
-                    "capture_market route/auth failure for %s; skipping extra capture retries and using fallback if available: %s",
-                    token,
-                    last_message[:220],
-                )
-                break
-            if attempt < 2:
-                log.warning(
-                    "capture_market retry %s/3 for %s: %s",
-                    attempt + 1,
-                    token,
-                    last_message,
-                )
-                await asyncio.sleep(1.0 + attempt)
+        data = await asyncio.to_thread(self._run_worker, "capture_market", payload)
+        snap = self._extract_latest_snapshot(token, data)
+        if snap is not None:
+            return snap
+        last_message = str(data.get("message") or data.get("status") or "capture_market failed")
 
         message = last_message
         snap = await asyncio.to_thread(self._reference_quote_snapshot, token, reason=message)
