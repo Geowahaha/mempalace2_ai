@@ -147,7 +147,46 @@ class HardMarketFilterTests(unittest.TestCase):
         )
         self.assertEqual(veto, "trend_RANGE")
         self.assertFalse(meta.get("applied"))
-        self.assertEqual(meta.get("blocked_reason"), "lane_class_bad")
+
+    def test_adaptive_hard_filter_allows_bad_lane_when_support_dominates(self) -> None:
+        settings = self._settings()
+        features = {
+            "trend_direction": "DOWN",
+            "volatility": "HIGH",
+            "spread_pct": 0.00008,
+            "session": "NY",
+        }
+        veto, meta = _maybe_soften_hard_filter_veto(
+            veto="structure_consolidation",
+            action="SELL",
+            features=features,
+            assessment={
+                "opportunity_score": 0.74,
+                "risk_score": 0.44,
+                "impulse_support": 0.88,
+            },
+            strategy_key="DOWN*HIGH*NY_trend_follow",
+            weekly_lane_profile={
+                "mempalace_strategy_lanes": {
+                    "DOWN*HIGH*NY_trend_follow": {
+                        "classification": "bad",
+                        "trades": 8,
+                        "wins": 2,
+                        "losses": 3,
+                        "win_rate": 0.25,
+                        "loss_rate": 0.375,
+                        "missed_opportunities": 7,
+                        "prevented_bad": 0,
+                        "shadow_blocked_wins": 0,
+                        "shadow_blocked_losses": 0,
+                    }
+                }
+            },
+            risk=self._risk(),
+            settings=settings,
+        )
+        self.assertIsNone(veto)
+        self.assertTrue(meta.get("applied"))
 
 
 if __name__ == "__main__":

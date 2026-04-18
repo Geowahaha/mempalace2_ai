@@ -677,18 +677,26 @@ def _maybe_soften_hard_filter_veto(
     min_trades = int(settings.hard_filter_adaptive_min_trades)
     support_edge_min = int(settings.hard_filter_adaptive_support_edge_min)
     max_loss_rate = float(settings.hard_filter_adaptive_max_loss_rate)
-    if lane_class in {"bad", "caution"}:
-        meta["blocked_reason"] = f"lane_class_{lane_class}"
-        return veto, meta
-    if trades >= min_trades and loss_rate > max_loss_rate:
+    caution_lane = lane_class in {"bad", "caution"}
+    if trades >= min_trades and loss_rate > max_loss_rate and support_edge < max(2, support_edge_min):
         meta["blocked_reason"] = f"lane_loss_rate:{loss_rate:.3f}>{max_loss_rate:.3f}"
         return veto, meta
 
     performance_ok = trades >= min_trades and win_rate >= 0.5 and loss_rate <= max_loss_rate
-    lane_context_ok = (
-        (lane_class in {"good", "opportunity"} and (support_edge >= 0 or performance_ok))
-        or (support_edge >= support_edge_min and performance_ok)
-    )
+    if caution_lane:
+        lane_context_ok = (
+            support_edge >= max(2, support_edge_min)
+            and support > caution
+            and loss_rate <= min(0.95, max_loss_rate + 0.18)
+        )
+    else:
+        lane_context_ok = (
+            (lane_class in {"good", "opportunity"} and (support_edge >= 0 or performance_ok))
+            or (
+                support_edge >= support_edge_min
+                and (performance_ok or support >= max(1, min_trades))
+            )
+        )
     if not lane_context_ok:
         meta["blocked_reason"] = "lane_context_not_supportive"
         return veto, meta
