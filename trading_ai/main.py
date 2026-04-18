@@ -2076,6 +2076,66 @@ async def learning_loop(settings: Settings) -> None:
                     anticipated_action = "BUY"
                 elif pre_sell_veto is None:
                     anticipated_action = "SELL"
+                elif bool(settings.hard_filter_adaptive_enabled):
+                    adaptive_hold_candidates: List[Dict[str, Any]] = []
+                    for side, side_veto in (("BUY", pre_buy_veto), ("SELL", pre_sell_veto)):
+                        side_setup = infer_setup_tag(features, side)
+                        side_strategy_key = build_strategy_key(features, side_setup)
+                        side_assessment = assess_entry_candidate(
+                            action=side,
+                            features=features,
+                            decision={"reason": f"adaptive_hold_probe:{side}"},
+                            matches=[],
+                            strategy_state=_strategy_state_payload(registry, side_strategy_key),
+                            pattern_analysis=pattern_analysis,
+                        )
+                        relaxed_veto, adaptive_meta = _maybe_soften_hard_filter_veto(
+                            veto=side_veto,
+                            action=side,
+                            features=features,
+                            assessment=side_assessment,
+                            strategy_key=side_strategy_key,
+                            weekly_lane_profile=weekly_lane_profile,
+                            risk=risk,
+                            settings=settings,
+                        )
+                        if adaptive_meta.get("applied") and relaxed_veto is None:
+                            opportunity = float(side_assessment.get("opportunity_score") or 0.0)
+                            risk_score = float(side_assessment.get("risk_score") or 1.0)
+                            adaptive_hold_candidates.append(
+                                {
+                                    "side": side,
+                                    "strategy_key": side_strategy_key,
+                                    "filter": str(adaptive_meta.get("veto") or side_veto or ""),
+                                    "edge": opportunity - risk_score,
+                                    "impulse_support": float(side_assessment.get("impulse_support") or 0.0),
+                                    "support_edge": int(adaptive_meta.get("support_edge") or 0),
+                                    "opportunity": opportunity,
+                                    "risk": risk_score,
+                                }
+                            )
+                    if adaptive_hold_candidates:
+                        adaptive_hold_candidates.sort(
+                            key=lambda item: (
+                                float(item.get("edge") or 0.0),
+                                float(item.get("impulse_support") or 0.0),
+                                int(item.get("support_edge") or 0),
+                            ),
+                            reverse=True,
+                        )
+                        selected = adaptive_hold_candidates[0]
+                        anticipated_action = str(selected.get("side") or "HOLD")
+                        log.info(
+                            "Adaptive hard-filter selected HOLD-side %s lane=%s filter=%s opp=%.3f risk=%.3f edge=%.3f impulse=%.3f support_edge=%s",
+                            anticipated_action,
+                            str(selected.get("strategy_key") or ""),
+                            str(selected.get("filter") or ""),
+                            float(selected.get("opportunity") or 0.0),
+                            float(selected.get("risk") or 0.0),
+                            float(selected.get("edge") or 0.0),
+                            float(selected.get("impulse_support") or 0.0),
+                            int(selected.get("support_edge") or 0),
+                        )
             anticipated_setup = infer_setup_tag(features, anticipated_action)
             anticipated_strategy_key = build_strategy_key(features, anticipated_setup)
             anticipated_room_guard: Optional[Dict[str, Any]] = None
