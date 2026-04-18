@@ -280,6 +280,66 @@ class BacktestLearningPolicyTests(unittest.TestCase):
             notes = [str(item) for item in list(policy.get("notes") or [])]
             self.assertTrue(any(note.startswith("skip_no_history:") for note in notes))
 
+    def test_run_once_seeds_history_then_retries_backtest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = (root / "data").resolve()
+            data_dir.mkdir(parents=True, exist_ok=True)
+            env_path = root / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        f"DATA_DIR={data_dir}",
+                        "SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_ENABLED=true",
+                        "BACKTEST_LEARNING_SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_FALLBACK_SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_POLICY_APPLY_ENABLED=true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            supervisor = BacktestLearningSupervisor(settings=settings)
+            supervisor._compute_window = lambda: ("2026-04-11", "2026-04-18", "UTC")  # type: ignore[method-assign]
+
+            call_count = {"value": 0}
+
+            def _fake_run_backtest_subprocess(*, start_day: str, end_day: str, tz_name: str, symbol: str) -> dict:
+                call_count["value"] += 1
+                if call_count["value"] == 1:
+                    raise RuntimeError(f"No historical bars found for {symbol} between A and B")
+                return {
+                    "performance": {
+                        "closed_trades": 30,
+                        "win_rate": 0.62,
+                        "avg_profit": 0.03,
+                        "max_drawdown": 0.9,
+                    },
+                    "decisions": {"BUY": 20, "SELL": 15, "HOLD": 10},
+                    "diagnostics": {
+                        "blocker_buckets": {
+                            "pre_llm_hard_filter:trend_RANGE": 18,
+                            "pre_llm_hard_filter:structure_consolidation": 5,
+                        }
+                    },
+                    "mode": "backtest",
+                    "run_id": "seed-retry-run",
+                }
+
+            supervisor._run_backtest_subprocess = _fake_run_backtest_subprocess  # type: ignore[method-assign]
+            supervisor._seed_candle_history_from_worker = (  # type: ignore[method-assign]
+                lambda *, symbol, timeframe, days: (480, "ok")
+            )
+
+            policy = supervisor._run_once_sync()
+            self.assertGreaterEqual(call_count["value"], 2)
+            self.assertIn(policy.get("mode"), {"relax", "hold", "tighten"})
+            run_window = dict(policy.get("run_window") or {})
+            self.assertEqual(int(run_window.get("seeded_bars") or 0), 480)
+            self.assertEqual(str(run_window.get("seed_status") or ""), "ok")
+
 
 if __name__ == "__main__":
     unittest.main()

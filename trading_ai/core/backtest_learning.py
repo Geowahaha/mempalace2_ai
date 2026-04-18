@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -392,10 +394,11 @@ class BacktestLearningSupervisor:
         source_policy = str(self._settings.backtest_learning_source_policy or "real_first").strip().lower()
         repo_root = self._repo_root.resolve()
         candle_db = repo_root / "backtest" / "candle_data.db"
+        candle_dir = repo_root / "backtest"
         ctrader_db = repo_root / "data" / "ctrader_openapi.db"
 
         fallback_ok = False
-        if source_policy in {"real_first", "candle_only"} and candle_db.is_file():
+        if source_policy in {"real_first", "candle_only"} and (candle_db.is_file() or candle_dir.is_dir()):
             fallback_ok = True
         elif source_policy == "real_only" and ctrader_db.is_file():
             fallback_ok = True
@@ -459,6 +462,122 @@ class BacktestLearningSupervisor:
         if not report:
             raise RuntimeError("backtest_report_parse_failed")
         return report
+
+    def _seed_candle_history_from_worker(self, *, symbol: str, timeframe: str, days: int) -> tuple[int, str]:
+        account_id = _safe_int(self._settings.ctrader_account_id, 0)
+        if account_id <= 0:
+            return 0, "account_missing"
+
+        worker_script = Path(
+            self._settings.ctrader_worker_script or (self._repo_root / "ops" / "ctrader_execute_once.py")
+        ).resolve()
+        if not worker_script.exists():
+            return 0, f"worker_script_missing:{worker_script}"
+
+        worker_python = str(self._settings.ctrader_worker_python or sys.executable).strip() or sys.executable
+        to_ms = int(time.time() * 1000)
+        from_ms = max(0, to_ms - (max(1, int(days)) * 24 * 60 * 60 * 1000))
+        payload = {
+            "account_id": int(account_id),
+            "symbol": str(symbol),
+            "timeframe": str(timeframe),
+            "from_ms": int(from_ms),
+            "to_ms": int(to_ms),
+            "count": 14000,
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+            json.dump(payload, tmp, ensure_ascii=False)
+            payload_path = Path(tmp.name)
+        try:
+            worker_timeout = max(30, min(300, int(self._settings.ctrader_worker_timeout_sec)))
+            proc = subprocess.run(
+                [
+                    worker_python,
+                    str(worker_script),
+                    "--mode",
+                    "get_trendbars",
+                    "--payload-file",
+                    str(payload_path),
+                ],
+                cwd=str(self._repo_root),
+                capture_output=True,
+                text=True,
+                timeout=worker_timeout,
+                check=False,
+            )
+        finally:
+            try:
+                payload_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        if int(proc.returncode) != 0:
+            stderr = str(proc.stderr or "").strip().splitlines()
+            tail = " | ".join(stderr[-5:]) if stderr else "worker_nonzero_exit"
+            return 0, f"worker_failed:{proc.returncode}:{tail}"
+
+        worker_output = _extract_report_json(str(proc.stdout or ""))
+        if not worker_output:
+            return 0, "worker_output_parse_failed"
+        if not bool(worker_output.get("ok")):
+            status = str(worker_output.get("status") or worker_output.get("message") or "worker_not_ok")
+            return 0, status
+
+        bars = list(worker_output.get("bars") or [])
+        if not bars:
+            return 0, "worker_no_bars"
+
+        dexter_root = self._resolve_backtest_root()
+        db_path = dexter_root / "backtest" / "candle_data.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        rows: list[tuple[Any, ...]] = []
+        for bar in bars:
+            bar_dict = dict(bar or {})
+            ts_ms = _safe_int(bar_dict.get("ts_ms"), 0)
+            if ts_ms <= 0:
+                continue
+            ts_iso = datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC).isoformat()
+            rows.append(
+                (
+                    str(symbol).upper(),
+                    str(timeframe).lower(),
+                    ts_iso,
+                    _safe_float(bar_dict.get("open"), 0.0),
+                    _safe_float(bar_dict.get("high"), 0.0),
+                    _safe_float(bar_dict.get("low"), 0.0),
+                    _safe_float(bar_dict.get("close"), 0.0),
+                    _safe_float(bar_dict.get("volume"), 0.0),
+                )
+            )
+        if not rows:
+            return 0, "worker_bars_invalid"
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS candles (
+                    symbol  TEXT    NOT NULL,
+                    tf      TEXT    NOT NULL,
+                    ts      TEXT    NOT NULL,
+                    open    REAL    NOT NULL,
+                    high    REAL    NOT NULL,
+                    low     REAL    NOT NULL,
+                    close   REAL    NOT NULL,
+                    volume  REAL    NOT NULL DEFAULT 0,
+                    PRIMARY KEY (symbol, tf, ts)
+                )
+                """
+            )
+            conn.executemany(
+                "INSERT OR REPLACE INTO candles (symbol,tf,ts,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?,?)",
+                rows,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return len(rows), "ok"
 
     def _write_summary(self, policy: Dict[str, Any]) -> None:
         gate = dict(policy.get("quality_gate") or {})
@@ -573,6 +692,48 @@ class BacktestLearningSupervisor:
             else:
                 raise
 
+        seeded_bars = 0
+        seed_status = "not_attempted"
+        if report is None and no_history_reason:
+            seed_days = max(
+                7,
+                int(self._settings.backtest_learning_lookback_days)
+                + int(self._settings.backtest_learning_end_offset_days)
+                + 7,
+            )
+            seeded_bars, seed_status = self._seed_candle_history_from_worker(
+                symbol=active_symbol,
+                timeframe=str(self._settings.backtest_learning_timeframe),
+                days=seed_days,
+            )
+            if seeded_bars > 0:
+                log.warning(
+                    "BacktestLearning: seeded candle history bars=%s symbol=%s timeframe=%s days=%s; retrying backtest",
+                    seeded_bars,
+                    active_symbol,
+                    str(self._settings.backtest_learning_timeframe),
+                    seed_days,
+                )
+                try:
+                    report = self._run_backtest_subprocess(
+                        start_day=start_day,
+                        end_day=end_day,
+                        tz_name=tz_name,
+                        symbol=active_symbol,
+                    )
+                    no_history_reason = ""
+                except Exception as seed_retry_exc:
+                    if self._looks_like_no_history_error(seed_retry_exc):
+                        no_history_reason = str(seed_retry_exc)
+                    else:
+                        raise
+            else:
+                log.warning(
+                    "BacktestLearning: candle history seed skipped symbol=%s status=%s",
+                    active_symbol,
+                    seed_status,
+                )
+
         if report is None:
             log.warning(
                 "BacktestLearning: no historical bars for symbol=%s; applying safe hold policy",
@@ -581,7 +742,7 @@ class BacktestLearningSupervisor:
             policy = self._build_no_data_policy(
                 baseline=baseline,
                 symbol=active_symbol,
-                reason=no_history_reason or "no_history",
+                reason=f"{no_history_reason or 'no_history'}|seed_status={seed_status}",
             )
         else:
             policy = build_adaptive_policy_from_backtest(
@@ -607,6 +768,9 @@ class BacktestLearningSupervisor:
         }
         if fallback_from:
             policy["run_window"]["symbol_fallback_from"] = fallback_from
+        if seeded_bars > 0:
+            policy["run_window"]["seeded_bars"] = int(seeded_bars)
+            policy["run_window"]["seed_status"] = seed_status
         if report:
             report_mode = str(report.get("mode") or "")
             run_id = str(report.get("run_id") or "")
