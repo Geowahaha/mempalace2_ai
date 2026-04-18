@@ -191,6 +191,36 @@ class ReconcileOpenPositionsTests(unittest.TestCase):
         self.assertTrue(bool(snap.extra.get("soft_stale_cache")))
         self.assertEqual(len(scheduled), 1)
 
+    def test_get_recent_closes_seeds_quote_cache_when_empty(self):
+        broker = CTraderDexterWorkerBroker.__new__(CTraderDexterWorkerBroker)
+        broker._account_id = 46945293
+        broker._quote_cache = {}
+        broker._settings = SimpleNamespace(
+            ctrader_reference_quote_spread=0.12,
+        )
+
+        def _run_worker(mode, payload):
+            self.assertEqual(mode, "get_trendbars")
+            self.assertEqual(payload["symbol"], "BTCUSD")
+            return {
+                "ok": True,
+                "status": "ok",
+                "bars": [
+                    {"close": 64001.25},
+                    {"close": 64002.5},
+                ],
+            }
+
+        broker._run_worker = _run_worker
+
+        closes = asyncio.run(broker.get_recent_closes("BTCUSD", count=2, timeframe="1m"))
+
+        self.assertEqual(closes, [64001.25, 64002.5])
+        self.assertIn("BTCUSD", broker._quote_cache)
+        seeded = broker._quote_cache["BTCUSD"]
+        self.assertAlmostEqual(seeded.mid, 64002.5)
+        self.assertEqual(seeded.extra.get("venue"), "ctrader_trendbar_seed")
+
     def test_converts_ctrader_raw_volume_back_to_lots(self):
         broker = _StubBroker(
             {

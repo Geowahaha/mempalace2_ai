@@ -808,6 +808,23 @@ class CTraderDexterWorkerBroker(Broker):
                 data.get("status"),
             )
             return []
+        latest_close = float(closes[-1])
+        if token not in self._quote_cache:
+            spread_hint = max(0.0, float(getattr(self._settings, "ctrader_reference_quote_spread", 0.10)))
+            bid = max(latest_close - (spread_hint / 2.0), 0.0)
+            ask = latest_close + (spread_hint / 2.0)
+            self._quote_cache[token] = MarketSnapshot(
+                symbol=token,
+                bid=bid,
+                ask=ask,
+                mid=latest_close,
+                spread=max(ask - bid, 0.0),
+                ts_unix=time.time(),
+                extra={
+                    "venue": "ctrader_trendbar_seed",
+                    "seeded_from": payload["timeframe"],
+                },
+            )
         return closes[-bar_count:]
 
     def _extract_trade_entry_price(self, data: Dict[str, Any], side: Action) -> Optional[float]:
