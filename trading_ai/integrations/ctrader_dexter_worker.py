@@ -643,6 +643,14 @@ class CTraderDexterWorkerBroker(Broker):
 
         task.add_done_callback(_cleanup)
 
+    def _effective_soft_stale_ttl_sec(self, cache_ttl: float) -> float:
+        configured = float(getattr(self._settings, "ctrader_quote_soft_stale_ttl_sec", cache_ttl))
+        loop_interval = max(0.0, float(getattr(self._settings, "loop_interval_sec", 0.0)))
+        # Keep soft-stale long enough to cover one full loop tick, so slow capture path
+        # does not block every cycle when LOOP_INTERVAL_SEC is above cache TTL.
+        loop_floor = loop_interval + 2.0 if loop_interval > 0.0 else cache_ttl
+        return max(cache_ttl, configured, loop_floor)
+
     async def get_market_data(self, symbol: str) -> MarketSnapshot:
         token = str(symbol).upper().replace(" ", "")
         quote_source = self._quote_source()
@@ -663,18 +671,39 @@ class CTraderDexterWorkerBroker(Broker):
 
         cached = self._quote_cache.get(token)
         cache_ttl = float(self._settings.ctrader_quote_cache_ttl_sec)
-        soft_stale_ttl = max(
-            cache_ttl,
-            float(getattr(self._settings, "ctrader_quote_soft_stale_ttl_sec", cache_ttl)),
-        )
+        soft_stale_ttl = self._effective_soft_stale_ttl_sec(cache_ttl)
+        refresh_enabled = bool(getattr(self._settings, "ctrader_quote_background_refresh_enabled", True))
         now = time.time()
         if cached:
             age = now - cached.ts_unix
             if age <= cache_ttl:
+                if refresh_enabled and age >= max(0.5, cache_ttl * 0.6):
+                    self._schedule_quote_refresh(token, reason=f"proactive_cache_age age={age:.1f}s")
                 return cached
+            inflight = self._quote_refresh_tasks.get(token)
+            if (
+                refresh_enabled
+                and inflight is not None
+                and not inflight.done()
+                and age <= max(soft_stale_ttl * 3.0, cache_ttl * 6.0, 120.0)
+            ):
+                return MarketSnapshot(
+                    symbol=cached.symbol,
+                    bid=cached.bid,
+                    ask=cached.ask,
+                    mid=cached.mid,
+                    spread=cached.spread,
+                    ts_unix=cached.ts_unix,
+                    extra={
+                        **dict(cached.extra),
+                        "soft_stale_cache": True,
+                        "soft_stale_age_sec": round(age, 1),
+                        "refresh_inflight": True,
+                    },
+                )
             if (
                 age <= soft_stale_ttl
-                and bool(getattr(self._settings, "ctrader_quote_background_refresh_enabled", True))
+                and refresh_enabled
             ):
                 self._schedule_quote_refresh(token, reason=f"soft_stale_cache age={age:.1f}s")
                 return MarketSnapshot(

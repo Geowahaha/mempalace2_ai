@@ -115,6 +115,10 @@ class ConfigTests(unittest.TestCase):
                         "HARD_FILTER_ADAPTIVE_MIN_EDGE=0.12",
                         "HARD_FILTER_ADAPTIVE_MIN_IMPULSE_SUPPORT=0.71",
                         "HARD_FILTER_ADAPTIVE_MAX_LOSS_RATE=0.58",
+                        "HARD_FILTER_ADAPTIVE_RECENT_WINDOW=10",
+                        "HARD_FILTER_ADAPTIVE_RECENT_MIN_SAMPLES=5",
+                        "HARD_FILTER_ADAPTIVE_RECENT_NEG_EDGE_BLOCK=-0.3",
+                        "HARD_FILTER_ADAPTIVE_RECENT_POS_EDGE_BONUS=0.25",
                         "CTRADER_QUOTE_SOFT_STALE_TTL_SEC=25",
                         "CTRADER_QUOTE_BACKGROUND_REFRESH_ENABLED=true",
                         "CTRADER_CAPTURE_MAX_EVENTS=12",
@@ -132,6 +136,10 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(settings.hard_filter_adaptive_min_edge, 0.12)
             self.assertEqual(settings.hard_filter_adaptive_min_impulse_support, 0.71)
             self.assertEqual(settings.hard_filter_adaptive_max_loss_rate, 0.58)
+            self.assertEqual(settings.hard_filter_adaptive_recent_window, 10)
+            self.assertEqual(settings.hard_filter_adaptive_recent_min_samples, 5)
+            self.assertEqual(settings.hard_filter_adaptive_recent_neg_edge_block, -0.3)
+            self.assertEqual(settings.hard_filter_adaptive_recent_pos_edge_bonus, 0.25)
             self.assertEqual(settings.ctrader_quote_soft_stale_ttl_sec, 25.0)
             self.assertTrue(settings.ctrader_quote_background_refresh_enabled)
             self.assertEqual(settings.ctrader_capture_max_events, 12)

@@ -149,6 +149,48 @@ class ReconcileOpenPositionsTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "capture_market")
         self.assertEqual(int(calls[0][1]["max_events"]), 12)
 
+    def test_get_market_data_soft_stale_uses_loop_interval_floor(self):
+        broker = CTraderDexterWorkerBroker.__new__(CTraderDexterWorkerBroker)
+        broker._account_id = 46945293
+        broker._quote_cache = {
+            "BTCUSD": MarketSnapshot(
+                symbol="BTCUSD",
+                bid=64000.0,
+                ask=64001.0,
+                mid=64000.5,
+                spread=1.0,
+                ts_unix=time.time() - 14.0,
+                extra={"venue": "test"},
+            )
+        }
+        broker._reference_quote_cache = {}
+        broker._quote_refresh_tasks = {}
+        broker._settings = SimpleNamespace(
+            ctrader_quote_cache_ttl_sec=2.0,
+            ctrader_quote_soft_stale_ttl_sec=6.0,
+            ctrader_quote_background_refresh_enabled=True,
+            ctrader_capture_duration_sec=3,
+            ctrader_capture_max_events=12,
+            loop_interval_sec=20.0,
+        )
+        broker._quote_source = lambda: "auto"
+        broker._allow_paper_fallback = lambda: False
+        broker._reference_quote_snapshot = lambda *_args, **_kwargs: None
+
+        scheduled = []
+        broker._schedule_quote_refresh = lambda token, reason="": scheduled.append((token, reason))
+
+        def _run_worker(_mode, _payload):
+            raise AssertionError("capture_market should not run while soft-stale loop floor applies")
+
+        broker._run_worker = _run_worker
+
+        snap = asyncio.run(broker.get_market_data("BTCUSD"))
+
+        self.assertEqual(snap.symbol, "BTCUSD")
+        self.assertTrue(bool(snap.extra.get("soft_stale_cache")))
+        self.assertEqual(len(scheduled), 1)
+
     def test_converts_ctrader_raw_volume_back_to_lots(self):
         broker = _StubBroker(
             {

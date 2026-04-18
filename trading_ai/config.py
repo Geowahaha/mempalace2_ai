@@ -695,6 +695,34 @@ class Settings(BaseSettings):
         validation_alias="HARD_FILTER_ADAPTIVE_MAX_LOSS_RATE",
         description="Block adaptive hard-filter softening when lane weekly loss-rate is above this.",
     )
+    hard_filter_adaptive_recent_window: int = Field(
+        default=8,
+        ge=1,
+        le=200,
+        validation_alias="HARD_FILTER_ADAPTIVE_RECENT_WINDOW",
+        description="Recent closed-trade score window size used to adapt hard-filter softening.",
+    )
+    hard_filter_adaptive_recent_min_samples: int = Field(
+        default=4,
+        ge=1,
+        le=200,
+        validation_alias="HARD_FILTER_ADAPTIVE_RECENT_MIN_SAMPLES",
+        description="Require at least this many recent scores before recent-edge adaptive checks apply.",
+    )
+    hard_filter_adaptive_recent_neg_edge_block: float = Field(
+        default=-0.25,
+        ge=-1.0,
+        le=1.0,
+        validation_alias="HARD_FILTER_ADAPTIVE_RECENT_NEG_EDGE_BLOCK",
+        description="Block adaptive hard-filter softening when recent average score is below this edge.",
+    )
+    hard_filter_adaptive_recent_pos_edge_bonus: float = Field(
+        default=0.20,
+        ge=0.0,
+        le=1.0,
+        validation_alias="HARD_FILTER_ADAPTIVE_RECENT_POS_EDGE_BONUS",
+        description="When recent average score exceeds this edge, reduce support-edge requirement by one step.",
+    )
 
     # --- cTrader (names aligned with Dexter Pro — paste from .env.local) ---
     ctrader_client_id: Optional[str] = Field(

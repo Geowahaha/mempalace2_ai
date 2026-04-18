@@ -677,15 +677,44 @@ def _maybe_soften_hard_filter_veto(
     min_trades = int(settings.hard_filter_adaptive_min_trades)
     support_edge_min = int(settings.hard_filter_adaptive_support_edge_min)
     max_loss_rate = float(settings.hard_filter_adaptive_max_loss_rate)
+    recent_window = max(1, int(settings.hard_filter_adaptive_recent_window))
+    recent_min_samples = max(1, int(settings.hard_filter_adaptive_recent_min_samples))
+    recent_scores = [int(score) for score in list(risk.recent_scores)[-recent_window:]]
+    recent_samples = len(recent_scores)
+    recent_wins = sum(1 for score in recent_scores if score > 0)
+    recent_losses = sum(1 for score in recent_scores if score < 0)
+    recent_edge = (sum(recent_scores) / recent_samples) if recent_samples > 0 else 0.0
+    recent_win_rate = (recent_wins / recent_samples) if recent_samples > 0 else 0.0
+    recent_loss_rate = (recent_losses / recent_samples) if recent_samples > 0 else 0.0
+
+    meta.update(
+        {
+            "recent_samples": recent_samples,
+            "recent_win_rate": round(recent_win_rate, 4),
+            "recent_loss_rate": round(recent_loss_rate, 4),
+            "recent_edge": round(recent_edge, 4),
+        }
+    )
+
+    if recent_samples >= recent_min_samples and recent_edge <= float(settings.hard_filter_adaptive_recent_neg_edge_block):
+        meta["blocked_reason"] = f"recent_edge_negative:{recent_edge:.3f}"
+        return veto, meta
+
+    support_edge_required = support_edge_min
+    if recent_samples >= recent_min_samples and recent_edge >= float(settings.hard_filter_adaptive_recent_pos_edge_bonus):
+        support_edge_required = max(0, support_edge_min - 1)
+    support_edge_guard = max(2, support_edge_required)
+    meta["support_edge_required"] = support_edge_required
+
     caution_lane = lane_class in {"bad", "caution"}
-    if trades >= min_trades and loss_rate > max_loss_rate and support_edge < max(2, support_edge_min):
+    if trades >= min_trades and loss_rate > max_loss_rate and support_edge < support_edge_guard:
         meta["blocked_reason"] = f"lane_loss_rate:{loss_rate:.3f}>{max_loss_rate:.3f}"
         return veto, meta
 
     performance_ok = trades >= min_trades and win_rate >= 0.5 and loss_rate <= max_loss_rate
     if caution_lane:
         lane_context_ok = (
-            support_edge >= max(2, support_edge_min)
+            support_edge >= support_edge_guard
             and support > caution
             and loss_rate <= min(0.95, max_loss_rate + 0.18)
         )
@@ -693,7 +722,7 @@ def _maybe_soften_hard_filter_veto(
         lane_context_ok = (
             (lane_class in {"good", "opportunity"} and (support_edge >= 0 or performance_ok))
             or (
-                support_edge >= support_edge_min
+                support_edge >= support_edge_required
                 and (performance_ok or support >= max(1, min_trades))
             )
         )
