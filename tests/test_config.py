@@ -101,6 +101,41 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(settings.performance_cycle_warn_ms, 1.0)
             self.assertTrue(settings.performance_stage_log_every_cycle)
 
+    def test_hard_filter_adaptive_and_quote_soft_stale_settings_load(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "HARD_FILTER_ADAPTIVE_ENABLED=true",
+                        "HARD_FILTER_ADAPTIVE_MIN_TRADES=4",
+                        "HARD_FILTER_ADAPTIVE_SUPPORT_EDGE_MIN=2",
+                        "HARD_FILTER_ADAPTIVE_MIN_OPPORTUNITY=0.7",
+                        "HARD_FILTER_ADAPTIVE_MAX_RISK=0.52",
+                        "HARD_FILTER_ADAPTIVE_MIN_EDGE=0.12",
+                        "HARD_FILTER_ADAPTIVE_MIN_IMPULSE_SUPPORT=0.71",
+                        "HARD_FILTER_ADAPTIVE_MAX_LOSS_RATE=0.58",
+                        "CTRADER_QUOTE_SOFT_STALE_TTL_SEC=25",
+                        "CTRADER_QUOTE_BACKGROUND_REFRESH_ENABLED=true",
+                        "CTRADER_CAPTURE_MAX_EVENTS=12",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            self.assertTrue(settings.hard_filter_adaptive_enabled)
+            self.assertEqual(settings.hard_filter_adaptive_min_trades, 4)
+            self.assertEqual(settings.hard_filter_adaptive_support_edge_min, 2)
+            self.assertEqual(settings.hard_filter_adaptive_min_opportunity, 0.7)
+            self.assertEqual(settings.hard_filter_adaptive_max_risk, 0.52)
+            self.assertEqual(settings.hard_filter_adaptive_min_edge, 0.12)
+            self.assertEqual(settings.hard_filter_adaptive_min_impulse_support, 0.71)
+            self.assertEqual(settings.hard_filter_adaptive_max_loss_rate, 0.58)
+            self.assertEqual(settings.ctrader_quote_soft_stale_ttl_sec, 25.0)
+            self.assertTrue(settings.ctrader_quote_background_refresh_enabled)
+            self.assertEqual(settings.ctrader_capture_max_events, 12)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -635,6 +635,66 @@ class Settings(BaseSettings):
             "Paper/prime loop starts with RANGE/LOW — set 0 to always apply vetoes."
         ),
     )
+    hard_filter_adaptive_enabled: bool = Field(
+        default=True,
+        validation_alias="HARD_FILTER_ADAPTIVE_ENABLED",
+        description=(
+            "Allow selective hard-filter softening using this week's real lane outcomes. "
+            "Risk rails still gate entries via opportunity/risk/edge thresholds."
+        ),
+    )
+    hard_filter_adaptive_min_trades: int = Field(
+        default=3,
+        ge=0,
+        le=10_000,
+        validation_alias="HARD_FILTER_ADAPTIVE_MIN_TRADES",
+        description="Minimum lane closed trades before adaptive hard-filter softening can activate.",
+    )
+    hard_filter_adaptive_support_edge_min: int = Field(
+        default=1,
+        ge=0,
+        le=1000,
+        validation_alias="HARD_FILTER_ADAPTIVE_SUPPORT_EDGE_MIN",
+        description=(
+            "Required (missed_opportunities + shadow_blocked_wins) minus "
+            "(prevented_bad + shadow_blocked_losses) to soften soft hard-filters."
+        ),
+    )
+    hard_filter_adaptive_min_opportunity: float = Field(
+        default=0.66,
+        ge=0.0,
+        le=1.0,
+        validation_alias="HARD_FILTER_ADAPTIVE_MIN_OPPORTUNITY",
+        description="Minimum entry opportunity score required before adaptive hard-filter softening.",
+    )
+    hard_filter_adaptive_max_risk: float = Field(
+        default=0.58,
+        ge=0.0,
+        le=1.0,
+        validation_alias="HARD_FILTER_ADAPTIVE_MAX_RISK",
+        description="Maximum entry risk score allowed for adaptive hard-filter softening.",
+    )
+    hard_filter_adaptive_min_edge: float = Field(
+        default=0.10,
+        ge=-1.0,
+        le=1.0,
+        validation_alias="HARD_FILTER_ADAPTIVE_MIN_EDGE",
+        description="Minimum opportunity-risk edge required for adaptive hard-filter softening.",
+    )
+    hard_filter_adaptive_min_impulse_support: float = Field(
+        default=0.66,
+        ge=0.0,
+        le=1.0,
+        validation_alias="HARD_FILTER_ADAPTIVE_MIN_IMPULSE_SUPPORT",
+        description="Minimum impulse support score needed when softening range/consolidation hard-filters.",
+    )
+    hard_filter_adaptive_max_loss_rate: float = Field(
+        default=0.62,
+        ge=0.0,
+        le=1.0,
+        validation_alias="HARD_FILTER_ADAPTIVE_MAX_LOSS_RATE",
+        description="Block adaptive hard-filter softening when lane weekly loss-rate is above this.",
+    )
 
     # --- cTrader (names aligned with Dexter Pro — paste from .env.local) ---
     ctrader_client_id: Optional[str] = Field(
@@ -734,11 +794,33 @@ class Settings(BaseSettings):
         le=60.0,
         validation_alias="CTRADER_QUOTE_CACHE_TTL_SEC",
     )
+    ctrader_quote_soft_stale_ttl_sec: float = Field(
+        default=15.0,
+        ge=0.0,
+        le=300.0,
+        validation_alias="CTRADER_QUOTE_SOFT_STALE_TTL_SEC",
+        description=(
+            "Allow returning slightly stale quote immediately (with async refresh) up to this age in seconds. "
+            "Use to reduce market_data latency spikes while keeping bounded staleness."
+        ),
+    )
+    ctrader_quote_background_refresh_enabled: bool = Field(
+        default=True,
+        validation_alias="CTRADER_QUOTE_BACKGROUND_REFRESH_ENABLED",
+        description="When true, stale quote reads can trigger non-blocking capture refresh.",
+    )
     ctrader_capture_duration_sec: int = Field(
         default=3,
         ge=1,
         le=15,
         validation_alias="CTRADER_CAPTURE_DURATION_SEC",
+    )
+    ctrader_capture_max_events: int = Field(
+        default=18,
+        ge=4,
+        le=120,
+        validation_alias="CTRADER_CAPTURE_MAX_EVENTS",
+        description="Max capture_market ticks/events per request (lower value helps latency under heavy feed).",
     )
     ctrader_reference_quote_fallback_enabled: bool = Field(
         default=True,

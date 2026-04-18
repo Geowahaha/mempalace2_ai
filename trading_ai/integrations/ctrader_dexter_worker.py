@@ -215,6 +215,7 @@ class CTraderDexterWorkerBroker(Broker):
         self._dexter_root = dexter_root
         self._quote_cache: Dict[str, MarketSnapshot] = {}
         self._reference_quote_cache: Dict[str, MarketSnapshot] = {}
+        self._quote_refresh_tasks: Dict[str, asyncio.Task[Any]] = {}
         self._project_root = Path(__file__).resolve().parents[2]
         self._package_root = Path(__file__).resolve().parents[1]
         self._env_paths = (
@@ -587,6 +588,61 @@ class CTraderDexterWorkerBroker(Broker):
         self._quote_cache[token] = snap
         return snap
 
+    def _capture_payload(self, token: str, *, duration_sec: Optional[int] = None) -> Dict[str, Any]:
+        capture_duration = int(
+            duration_sec
+            if duration_sec is not None
+            else int(self._settings.ctrader_capture_duration_sec)
+        )
+        capture_duration = max(1, min(15, capture_duration))
+        max_events = max(4, min(120, int(getattr(self._settings, "ctrader_capture_max_events", 30))))
+        return {
+            "account_id": int(self._account_id),
+            "symbols": [token],
+            "include_depth": False,
+            "duration_sec": capture_duration,
+            "max_events": max_events,
+        }
+
+    async def _refresh_quote_in_background(self, token: str, *, reason: str) -> None:
+        payload = self._capture_payload(token)
+        try:
+            data = await asyncio.to_thread(self._run_worker, "capture_market", payload)
+            if self._extract_latest_snapshot(token, data) is not None:
+                return
+            log.warning(
+                "Background quote refresh failed for %s: %s (reason=%s)",
+                token,
+                str(data.get("message") or data.get("status") or "capture_market failed")[:220],
+                reason[:120],
+            )
+        except Exception as exc:
+            log.warning(
+                "Background quote refresh exception for %s: %s (reason=%s)",
+                token,
+                str(exc)[:220],
+                reason[:120],
+            )
+
+    def _schedule_quote_refresh(self, token: str, *, reason: str) -> None:
+        if not bool(getattr(self._settings, "ctrader_quote_background_refresh_enabled", True)):
+            return
+        existing = self._quote_refresh_tasks.get(token)
+        if existing is not None and not existing.done():
+            return
+        try:
+            task = asyncio.create_task(self._refresh_quote_in_background(token, reason=reason))
+        except RuntimeError:
+            return
+        self._quote_refresh_tasks[token] = task
+
+        def _cleanup(done_task: asyncio.Task[Any]) -> None:
+            tracked = self._quote_refresh_tasks.get(token)
+            if tracked is done_task:
+                self._quote_refresh_tasks.pop(token, None)
+
+        task.add_done_callback(_cleanup)
+
     async def get_market_data(self, symbol: str) -> MarketSnapshot:
         token = str(symbol).upper().replace(" ", "")
         quote_source = self._quote_source()
@@ -607,17 +663,35 @@ class CTraderDexterWorkerBroker(Broker):
 
         cached = self._quote_cache.get(token)
         cache_ttl = float(self._settings.ctrader_quote_cache_ttl_sec)
+        soft_stale_ttl = max(
+            cache_ttl,
+            float(getattr(self._settings, "ctrader_quote_soft_stale_ttl_sec", cache_ttl)),
+        )
         now = time.time()
-        if cached and (now - cached.ts_unix) <= cache_ttl:
-            return cached
+        if cached:
+            age = now - cached.ts_unix
+            if age <= cache_ttl:
+                return cached
+            if (
+                age <= soft_stale_ttl
+                and bool(getattr(self._settings, "ctrader_quote_background_refresh_enabled", True))
+            ):
+                self._schedule_quote_refresh(token, reason=f"soft_stale_cache age={age:.1f}s")
+                return MarketSnapshot(
+                    symbol=cached.symbol,
+                    bid=cached.bid,
+                    ask=cached.ask,
+                    mid=cached.mid,
+                    spread=cached.spread,
+                    ts_unix=cached.ts_unix,
+                    extra={
+                        **dict(cached.extra),
+                        "soft_stale_cache": True,
+                        "soft_stale_age_sec": round(age, 1),
+                    },
+                )
 
-        payload = {
-            "account_id": int(self._account_id),
-            "symbols": [token],
-            "include_depth": False,
-            "duration_sec": int(self._settings.ctrader_capture_duration_sec),
-            "max_events": 30,
-        }
+        payload = self._capture_payload(token)
         data = await asyncio.to_thread(self._run_worker, "capture_market", payload)
         snap = self._extract_latest_snapshot(token, data)
         if snap is not None:

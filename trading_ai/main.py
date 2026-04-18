@@ -601,6 +601,139 @@ def _hard_market_filters(
     return None
 
 
+def _maybe_soften_hard_filter_veto(
+    *,
+    veto: Optional[str],
+    action: str,
+    features: Dict[str, Any],
+    assessment: Dict[str, Any],
+    strategy_key: str,
+    weekly_lane_profile: Dict[str, Any],
+    risk: RiskManager,
+    settings: Settings,
+) -> tuple[Optional[str], Dict[str, Any]]:
+    meta: Dict[str, Any] = {
+        "applied": False,
+        "veto": str(veto or ""),
+        "strategy_key": str(strategy_key or ""),
+        "blocked_reason": "",
+    }
+    veto_key = str(veto or "")
+    if not veto_key:
+        meta["blocked_reason"] = "no_veto"
+        return veto, meta
+    if not bool(settings.hard_filter_adaptive_enabled):
+        meta["blocked_reason"] = "adaptive_disabled"
+        return veto, meta
+    softenable = {"trend_RANGE", "structure_consolidation", "volatility_LOW"}
+    if veto_key not in softenable:
+        meta["blocked_reason"] = "veto_not_softenable"
+        return veto, meta
+
+    side = str(action or "").upper()
+    if side not in {"BUY", "SELL"}:
+        meta["blocked_reason"] = "action_not_directional"
+        return veto, meta
+    if risk.consecutive_losses >= int(settings.entry_loss_streak_block):
+        meta["blocked_reason"] = "loss_streak_guard"
+        return veto, meta
+
+    lane_payload = dict(
+        ((weekly_lane_profile.get("mempalace_strategy_lanes") or {}) if weekly_lane_profile else {}).get(strategy_key)
+        or {}
+    )
+    if not lane_payload:
+        meta["blocked_reason"] = "lane_missing"
+        return veto, meta
+
+    trades = int(lane_payload.get("trades") or 0)
+    wins = int(lane_payload.get("wins") or 0)
+    losses = int(lane_payload.get("losses") or 0)
+    win_rate = float(lane_payload.get("win_rate") or 0.0)
+    loss_rate = float(lane_payload.get("loss_rate") or 0.0)
+    lane_class = str(lane_payload.get("classification") or "")
+    missed = int(lane_payload.get("missed_opportunities") or 0)
+    prevented = int(lane_payload.get("prevented_bad") or 0)
+    shadow_wins = int(lane_payload.get("shadow_blocked_wins") or 0)
+    shadow_losses = int(lane_payload.get("shadow_blocked_losses") or 0)
+    support = missed + shadow_wins
+    caution = prevented + shadow_losses
+    support_edge = support - caution
+
+    meta.update(
+        {
+            "lane_class": lane_class,
+            "trades": trades,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(win_rate, 4),
+            "loss_rate": round(loss_rate, 4),
+            "support": support,
+            "caution": caution,
+            "support_edge": support_edge,
+        }
+    )
+
+    min_trades = int(settings.hard_filter_adaptive_min_trades)
+    support_edge_min = int(settings.hard_filter_adaptive_support_edge_min)
+    max_loss_rate = float(settings.hard_filter_adaptive_max_loss_rate)
+    if lane_class in {"bad", "caution"}:
+        meta["blocked_reason"] = f"lane_class_{lane_class}"
+        return veto, meta
+    if trades >= min_trades and loss_rate > max_loss_rate:
+        meta["blocked_reason"] = f"lane_loss_rate:{loss_rate:.3f}>{max_loss_rate:.3f}"
+        return veto, meta
+
+    performance_ok = trades >= min_trades and win_rate >= 0.5 and loss_rate <= max_loss_rate
+    lane_context_ok = (
+        (lane_class in {"good", "opportunity"} and (support_edge >= 0 or performance_ok))
+        or (support_edge >= support_edge_min and performance_ok)
+    )
+    if not lane_context_ok:
+        meta["blocked_reason"] = "lane_context_not_supportive"
+        return veto, meta
+
+    opportunity = float(assessment.get("opportunity_score") or 0.0)
+    risk_score = float(assessment.get("risk_score") or 1.0)
+    edge_score = opportunity - risk_score
+    impulse_support = float(assessment.get("impulse_support") or 0.0)
+    spread_pct = float(features.get("spread_pct") or 0.0)
+    trend = str(features.get("trend_direction") or "").upper()
+    aligned = (trend == "UP" and side == "BUY") or (trend == "DOWN" and side == "SELL") or trend not in {"UP", "DOWN"}
+
+    meta.update(
+        {
+            "opportunity": round(opportunity, 4),
+            "risk": round(risk_score, 4),
+            "edge": round(edge_score, 4),
+            "impulse_support": round(impulse_support, 4),
+            "spread_pct": round(spread_pct, 6),
+        }
+    )
+
+    if not aligned:
+        meta["blocked_reason"] = "action_trend_misaligned"
+        return veto, meta
+    if opportunity < float(settings.hard_filter_adaptive_min_opportunity):
+        meta["blocked_reason"] = "opportunity_too_low"
+        return veto, meta
+    if risk_score > float(settings.hard_filter_adaptive_max_risk):
+        meta["blocked_reason"] = "risk_too_high"
+        return veto, meta
+    if edge_score < float(settings.hard_filter_adaptive_min_edge):
+        meta["blocked_reason"] = "edge_too_low"
+        return veto, meta
+    if veto_key in {"trend_RANGE", "structure_consolidation"} and impulse_support < float(
+        settings.hard_filter_adaptive_min_impulse_support
+    ):
+        meta["blocked_reason"] = "impulse_support_too_low"
+        return veto, meta
+
+    meta["applied"] = True
+    meta["blocked_reason"] = ""
+    return None, meta
+
+
 def _reason_bucket(reason: str) -> str:
     text = str(reason or "").strip()
     if not text:
@@ -2080,6 +2213,29 @@ async def learning_loop(settings: Settings) -> None:
                 settings,
                 anticipated_action if anticipated_action in ("BUY", "SELL") else "",
             )
+            adaptive_pre_filter_meta: Dict[str, Any] = {}
+            if pre_llm_veto and anticipated_action in ("BUY", "SELL"):
+                pre_llm_veto, adaptive_pre_filter_meta = _maybe_soften_hard_filter_veto(
+                    veto=pre_llm_veto,
+                    action=anticipated_action,
+                    features=features,
+                    assessment=anticipated_assessment,
+                    strategy_key=anticipated_strategy_key,
+                    weekly_lane_profile=weekly_lane_profile,
+                    risk=risk,
+                    settings=settings,
+                )
+                if adaptive_pre_filter_meta.get("applied"):
+                    log.info(
+                        "Adaptive hard-filter relaxed pre-LLM veto lane=%s filter=%s opp=%.3f risk=%.3f edge=%.3f support=%s caution=%s",
+                        anticipated_strategy_key,
+                        str(adaptive_pre_filter_meta.get("veto") or ""),
+                        float(adaptive_pre_filter_meta.get("opportunity") or 0.0),
+                        float(adaptive_pre_filter_meta.get("risk") or 0.0),
+                        float(adaptive_pre_filter_meta.get("edge") or 0.0),
+                        int(adaptive_pre_filter_meta.get("support") or 0),
+                        int(adaptive_pre_filter_meta.get("caution") or 0),
+                    )
             loss_streak_override = _loss_streak_override_payload(
                 veto=pre_llm_veto,
                 anticipated_action=anticipated_action,
@@ -2237,6 +2393,44 @@ async def learning_loop(settings: Settings) -> None:
                 perf_mon.update_on_signal(decision)
 
             veto = _hard_market_filters(features, risk, settings, decision.action)
+            if veto and decision.action in ("BUY", "SELL"):
+                decision_strategy_key = build_strategy_key(
+                    features,
+                    infer_setup_tag(features, decision.action),
+                )
+                decision_assessment_for_veto = (
+                    anticipated_assessment
+                    if decision.action == anticipated_action and decision_strategy_key == anticipated_strategy_key
+                    else assess_entry_candidate(
+                        action=decision.action,
+                        features=features,
+                        decision={"reason": decision.reason, "confidence": decision.confidence},
+                        matches=skill_matches,
+                        strategy_state=anticipated_state,
+                        pattern_analysis=pattern_analysis,
+                    )
+                )
+                veto, adaptive_veto_meta = _maybe_soften_hard_filter_veto(
+                    veto=veto,
+                    action=decision.action,
+                    features=features,
+                    assessment=decision_assessment_for_veto,
+                    strategy_key=decision_strategy_key,
+                    weekly_lane_profile=weekly_lane_profile,
+                    risk=risk,
+                    settings=settings,
+                )
+                if adaptive_veto_meta.get("applied"):
+                    log.info(
+                        "Adaptive hard-filter relaxed post-LLM veto lane=%s filter=%s opp=%.3f risk=%.3f edge=%.3f support=%s caution=%s",
+                        decision_strategy_key,
+                        str(adaptive_veto_meta.get("veto") or ""),
+                        float(adaptive_veto_meta.get("opportunity") or 0.0),
+                        float(adaptive_veto_meta.get("risk") or 0.0),
+                        float(adaptive_veto_meta.get("edge") or 0.0),
+                        int(adaptive_veto_meta.get("support") or 0),
+                        int(adaptive_veto_meta.get("caution") or 0),
+                    )
             if loss_streak_override and str(veto).startswith("loss_streak_"):
                 veto = None
             if veto and not decision.reason.startswith("pre_llm_hard_filter:"):

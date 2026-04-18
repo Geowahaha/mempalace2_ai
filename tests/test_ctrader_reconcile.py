@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import time
 import unittest
 
+from trading_ai.core.execution import MarketSnapshot
 from trading_ai.integrations.ctrader_dexter_worker import (
     CTraderDexterWorkerBroker,
     _compact_broker_comment,
@@ -60,6 +61,93 @@ class ReconcileOpenPositionsTests(unittest.TestCase):
         self.assertGreaterEqual(snap.ts_unix, before - 0.5)
         self.assertLessEqual(snap.ts_unix, after + 0.5)
         self.assertEqual(snap.extra.get("source_event_ts"), 1741564801.0)
+
+    def test_get_market_data_returns_soft_stale_cache_and_schedules_refresh(self):
+        broker = CTraderDexterWorkerBroker.__new__(CTraderDexterWorkerBroker)
+        broker._account_id = 46945293
+        broker._quote_cache = {
+            "BTCUSD": MarketSnapshot(
+                symbol="BTCUSD",
+                bid=64000.0,
+                ask=64001.0,
+                mid=64000.5,
+                spread=1.0,
+                ts_unix=time.time() - 5.0,
+                extra={"venue": "test"},
+            )
+        }
+        broker._reference_quote_cache = {}
+        broker._quote_refresh_tasks = {}
+        broker._settings = SimpleNamespace(
+            ctrader_quote_cache_ttl_sec=2.0,
+            ctrader_quote_soft_stale_ttl_sec=20.0,
+            ctrader_quote_background_refresh_enabled=True,
+            ctrader_capture_duration_sec=3,
+            ctrader_capture_max_events=18,
+        )
+        broker._quote_source = lambda: "auto"
+        broker._allow_paper_fallback = lambda: False
+        broker._reference_quote_snapshot = lambda *_args, **_kwargs: None
+
+        scheduled = []
+        broker._schedule_quote_refresh = lambda token, reason="": scheduled.append((token, reason))
+
+        snap = asyncio.run(broker.get_market_data("BTCUSD"))
+
+        self.assertEqual(snap.symbol, "BTCUSD")
+        self.assertTrue(bool(snap.extra.get("soft_stale_cache")))
+        self.assertGreater(float(snap.extra.get("soft_stale_age_sec") or 0.0), 0.0)
+        self.assertEqual(len(scheduled), 1)
+        self.assertEqual(scheduled[0][0], "BTCUSD")
+
+    def test_get_market_data_uses_capture_after_soft_stale_window(self):
+        broker = CTraderDexterWorkerBroker.__new__(CTraderDexterWorkerBroker)
+        broker._account_id = 46945293
+        broker._quote_cache = {
+            "BTCUSD": MarketSnapshot(
+                symbol="BTCUSD",
+                bid=64000.0,
+                ask=64001.0,
+                mid=64000.5,
+                spread=1.0,
+                ts_unix=time.time() - 40.0,
+                extra={"venue": "test"},
+            )
+        }
+        broker._reference_quote_cache = {}
+        broker._quote_refresh_tasks = {}
+        broker._settings = SimpleNamespace(
+            ctrader_quote_cache_ttl_sec=2.0,
+            ctrader_quote_soft_stale_ttl_sec=15.0,
+            ctrader_quote_background_refresh_enabled=True,
+            ctrader_capture_duration_sec=3,
+            ctrader_capture_max_events=12,
+        )
+        broker._quote_source = lambda: "auto"
+        broker._allow_paper_fallback = lambda: False
+        broker._reference_quote_snapshot = lambda *_args, **_kwargs: None
+        broker._schedule_quote_refresh = lambda *_args, **_kwargs: None
+
+        calls = []
+
+        def _run_worker(mode, payload):
+            calls.append((mode, payload))
+            return {
+                "ok": True,
+                "status": "captured_live",
+                "environment": "demo",
+                "spots": [{"symbol": "BTCUSD", "bid": 65000.0, "ask": 65001.0, "event_ts": 1741565801.0}],
+            }
+
+        broker._run_worker = _run_worker
+
+        snap = asyncio.run(broker.get_market_data("BTCUSD"))
+
+        self.assertEqual(snap.mid, 65000.5)
+        self.assertFalse(bool(snap.extra.get("soft_stale_cache")))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "capture_market")
+        self.assertEqual(int(calls[0][1]["max_events"]), 12)
 
     def test_converts_ctrader_raw_volume_back_to_lots(self):
         broker = _StubBroker(
