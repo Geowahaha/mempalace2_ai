@@ -144,7 +144,17 @@ async def _probe_broker(settings: Settings) -> Dict[str, Any]:
 
     try:
         data = await asyncio.to_thread(broker._run_worker, "health", payload)
-        return {"ok": True, "status": "ok", "data": data}
+        inner = dict(data or {})
+        inner_ok = bool(inner.get("ok"))
+        inner_status = str(inner.get("status") or "")
+        if not inner_ok or inner_status in {"account_auth_failed", "auth_failed"}:
+            return {
+                "ok": False,
+                "status": "worker_health_failed",
+                "error": str(inner.get("message") or inner_status or "unknown"),
+                "data": inner,
+            }
+        return {"ok": True, "status": "ok", "data": inner}
     except Exception as exc:
         return {
             "ok": False,
@@ -176,9 +186,12 @@ def _build_recommendations(report: Dict[str, Any]) -> List[str]:
             )
     broker = dict(report.get("broker_health") or {})
     if broker and not bool(broker.get("ok")):
-        recs.append(
-            f"broker: status={broker.get('status')}; fix cTrader auth/account before enabling live execution."
-        )
+        detail = str(broker.get("error") or broker.get("status") or "unknown")
+        inner = dict(broker.get("data") or {})
+        inner_status = str(inner.get("status") or "").strip()
+        if inner_status:
+            detail = f"{detail} ({inner_status})"
+        recs.append(f"broker: {detail}; fix cTrader auth/account before enabling live execution.")
     if not recs:
         recs.append("burn-in checks passed; current Tencent profile is suitable for next live signal.")
     return recs
