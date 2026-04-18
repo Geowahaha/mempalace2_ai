@@ -171,6 +171,80 @@ class BacktestLearningPolicyTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 supervisor._resolve_backtest_root()
 
+    def test_supervisor_research_symbol_prefers_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = (root / "data").resolve()
+            data_dir.mkdir(parents=True, exist_ok=True)
+            env_path = root / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        f"DATA_DIR={data_dir}",
+                        "SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_SYMBOL=BTCUSD",
+                        "BACKTEST_LEARNING_FALLBACK_SYMBOL=ETHUSD",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            supervisor = BacktestLearningSupervisor(settings=settings)
+            self.assertEqual(supervisor.research_symbol(), "BTCUSD")
+
+    def test_run_once_retries_with_fallback_symbol_when_no_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = (root / "data").resolve()
+            data_dir.mkdir(parents=True, exist_ok=True)
+            env_path = root / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        f"DATA_DIR={data_dir}",
+                        "SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_ENABLED=true",
+                        "BACKTEST_LEARNING_SYMBOL=XAUUSD",
+                        "BACKTEST_LEARNING_FALLBACK_SYMBOL=BTCUSD",
+                        "BACKTEST_LEARNING_POLICY_APPLY_ENABLED=true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            supervisor = BacktestLearningSupervisor(settings=settings)
+            supervisor._compute_window = lambda: ("2026-04-11", "2026-04-18", "UTC")  # type: ignore[method-assign]
+
+            called_symbols: list[str] = []
+
+            def _fake_run_backtest_subprocess(*, start_day: str, end_day: str, tz_name: str, symbol: str) -> dict:
+                called_symbols.append(symbol)
+                if symbol == "XAUUSD":
+                    raise RuntimeError("No historical bars found for XAUUSD between A and B")
+                return {
+                    "performance": {
+                        "closed_trades": 20,
+                        "win_rate": 0.55,
+                        "avg_profit": 0.03,
+                        "max_drawdown": 0.8,
+                    },
+                    "decisions": {"BUY": 10, "SELL": 10, "HOLD": 5},
+                    "diagnostics": {"blocker_buckets": {}},
+                    "mode": "backtest",
+                    "run_id": "test-run-id",
+                }
+
+            supervisor._run_backtest_subprocess = _fake_run_backtest_subprocess  # type: ignore[method-assign]
+            policy = supervisor._run_once_sync()
+
+            self.assertEqual(called_symbols, ["XAUUSD", "BTCUSD"])
+            run_window = dict(policy.get("run_window") or {})
+            self.assertEqual(run_window.get("symbol"), "BTCUSD")
+            self.assertEqual(run_window.get("live_symbol"), "XAUUSD")
+            self.assertEqual(run_window.get("symbol_fallback_from"), "XAUUSD")
+
 
 if __name__ == "__main__":
     unittest.main()

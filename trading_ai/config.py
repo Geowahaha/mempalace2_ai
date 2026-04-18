@@ -1202,6 +1202,16 @@ class Settings(BaseSettings):
         validation_alias="BACKTEST_LEARNING_TIMEZONE",
         description="Timezone used to build local replay windows.",
     )
+    backtest_learning_symbol: str = Field(
+        default="",
+        validation_alias="BACKTEST_LEARNING_SYMBOL",
+        description="Optional replay symbol override for research lane (empty = use live symbol).",
+    )
+    backtest_learning_fallback_symbol: str = Field(
+        default="BTCUSD",
+        validation_alias="BACKTEST_LEARNING_FALLBACK_SYMBOL",
+        description="Fallback replay symbol when primary replay has no historical bars.",
+    )
     backtest_learning_timeframe: Literal["5m", "15m", "1h"] = Field(
         default="5m",
         validation_alias="BACKTEST_LEARNING_TIMEFRAME",

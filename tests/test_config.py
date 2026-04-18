@@ -160,6 +160,8 @@ class ConfigTests(unittest.TestCase):
                         "BACKTEST_LEARNING_LOOKBACK_DAYS=14",
                         "BACKTEST_LEARNING_END_OFFSET_DAYS=1",
                         "BACKTEST_LEARNING_TIMEZONE=Asia/Bangkok",
+                        "BACKTEST_LEARNING_SYMBOL=BTCUSD",
+                        "BACKTEST_LEARNING_FALLBACK_SYMBOL=ETHUSD",
                         "BACKTEST_LEARNING_TIMEFRAME=15m",
                         "BACKTEST_LEARNING_SOURCE_POLICY=real_first",
                         f"BACKTEST_LEARNING_DEXTER_ROOT={dexter_root}",
@@ -187,6 +189,8 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(settings.backtest_learning_lookback_days, 14)
             self.assertEqual(settings.backtest_learning_end_offset_days, 1)
             self.assertEqual(settings.backtest_learning_timezone, "Asia/Bangkok")
+            self.assertEqual(settings.backtest_learning_symbol, "BTCUSD")
+            self.assertEqual(settings.backtest_learning_fallback_symbol, "ETHUSD")
             self.assertEqual(settings.backtest_learning_timeframe, "15m")
             self.assertEqual(settings.backtest_learning_source_policy, "real_first")
             self.assertEqual(settings.backtest_learning_timeout_sec, 1500)

@@ -338,6 +338,12 @@ class BacktestLearningSupervisor:
     def current_overrides(self) -> Dict[str, Any]:
         return dict(self._overrides)
 
+    def research_symbol(self) -> str:
+        override = str(self._settings.backtest_learning_symbol or "").strip().upper()
+        if override:
+            return override
+        return str(self._settings.symbol or "").strip().upper()
+
     async def trigger_if_due(self) -> Optional[Dict[str, Any]]:
         if not self.should_run():
             return None
@@ -405,7 +411,12 @@ class BacktestLearningSupervisor:
 
         raise RuntimeError(f"backtest_dexter_root_missing:{configured_root}")
 
-    def _run_backtest_subprocess(self, *, start_day: str, end_day: str, tz_name: str) -> Dict[str, Any]:
+    @staticmethod
+    def _looks_like_no_history_error(exc: Exception) -> bool:
+        text = str(exc or "").lower()
+        return "no historical bars found" in text
+
+    def _run_backtest_subprocess(self, *, start_day: str, end_day: str, tz_name: str, symbol: str) -> Dict[str, Any]:
         dexter_root = self._resolve_backtest_root()
         output_root = Path(self._settings.backtest_learning_output_root)
         output_root.mkdir(parents=True, exist_ok=True)
@@ -421,7 +432,7 @@ class BacktestLearningSupervisor:
             "--timezone",
             str(tz_name),
             "--symbol",
-            str(self._settings.symbol),
+            str(symbol),
             "--timeframe",
             str(self._settings.backtest_learning_timeframe),
             "--dexter-root",
@@ -485,7 +496,37 @@ class BacktestLearningSupervisor:
 
     def _run_once_sync(self) -> Dict[str, Any]:
         start_day, end_day, tz_name = self._compute_window()
-        report = self._run_backtest_subprocess(start_day=start_day, end_day=end_day, tz_name=tz_name)
+        live_symbol = str(self._settings.symbol or "").strip().upper()
+        primary_symbol = self.research_symbol()
+        fallback_symbol = str(self._settings.backtest_learning_fallback_symbol or "").strip().upper()
+        active_symbol = primary_symbol
+        fallback_from = ""
+
+        try:
+            report = self._run_backtest_subprocess(
+                start_day=start_day,
+                end_day=end_day,
+                tz_name=tz_name,
+                symbol=active_symbol,
+            )
+        except Exception as exc:
+            if self._looks_like_no_history_error(exc) and fallback_symbol and fallback_symbol != active_symbol:
+                log.warning(
+                    "BacktestLearning: no bars for symbol=%s; retrying with fallback_symbol=%s",
+                    active_symbol,
+                    fallback_symbol,
+                )
+                fallback_from = active_symbol
+                active_symbol = fallback_symbol
+                report = self._run_backtest_subprocess(
+                    start_day=start_day,
+                    end_day=end_day,
+                    tz_name=tz_name,
+                    symbol=active_symbol,
+                )
+            else:
+                raise
+
         baseline = adaptive_hard_filter_baseline(self._settings)
         policy = build_adaptive_policy_from_backtest(
             report=report,
@@ -501,12 +542,15 @@ class BacktestLearningSupervisor:
             "start_day": start_day,
             "end_day": end_day,
             "timezone": tz_name,
-            "symbol": str(self._settings.symbol),
+            "symbol": active_symbol,
+            "live_symbol": live_symbol,
             "timeframe": str(self._settings.backtest_learning_timeframe),
             "source_policy": str(self._settings.backtest_learning_source_policy),
             "dexter_root": str(self._settings.backtest_learning_dexter_root),
             "output_root": str(self._settings.backtest_learning_output_root),
         }
+        if fallback_from:
+            policy["run_window"]["symbol_fallback_from"] = fallback_from
         report_mode = str(report.get("mode") or "")
         run_id = str(report.get("run_id") or "")
         if run_id:

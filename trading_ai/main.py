@@ -2076,14 +2076,16 @@ async def learning_loop(settings: Settings) -> None:
                         if policy:
                             q_gate = dict(policy.get("quality_gate") or {})
                             metrics = dict(policy.get("metrics") or {})
+                            run_window = dict(policy.get("run_window") or {})
                             log.info(
-                                "Backtest-learning policy updated mode=%s quality=%s closed=%s win_rate=%.3f blocked_ratio=%.3f overrides=%s",
+                                "Backtest-learning policy updated mode=%s quality=%s closed=%s win_rate=%.3f blocked_ratio=%.3f overrides=%s symbol=%s",
                                 str(policy.get("mode") or "hold"),
                                 bool(q_gate.get("passed", False)),
                                 int(q_gate.get("closed_trades") or 0),
                                 float(q_gate.get("win_rate") or 0.0),
                                 float(metrics.get("hard_filter_block_ratio") or 0.0),
                                 len(dict(policy.get("effective_overrides") or {})),
+                                str(run_window.get("symbol") or settings.symbol),
                             )
                     except Exception as exc:
                         log.warning("Backtest-learning task failed: %s", exc)
@@ -2091,9 +2093,11 @@ async def learning_loop(settings: Settings) -> None:
                     adaptive_hard_filter_overrides = backtest_learning.current_overrides()
 
                 if backtest_learning_task is None and backtest_learning.should_run():
+                    research_symbol = backtest_learning.research_symbol()
                     backtest_learning_task = asyncio.create_task(backtest_learning.trigger_if_due())
                     log.info(
-                        "Backtest-learning cycle queued symbol=%s lookback_days=%s timeframe=%s",
+                        "Backtest-learning cycle queued symbol=%s live_symbol=%s lookback_days=%s timeframe=%s",
+                        research_symbol,
                         settings.symbol,
                         settings.backtest_learning_lookback_days,
                         settings.backtest_learning_timeframe,
