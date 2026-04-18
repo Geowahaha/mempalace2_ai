@@ -56,6 +56,8 @@ async def _probe_llm(
 ) -> Dict[str, Any]:
     latencies_ms: List[float] = []
     failures: List[str] = []
+    actions: List[str] = []
+    confidences: List[float] = []
     sample: Dict[str, Any] = {}
     for idx in range(max(1, int(rounds))):
         started = time.perf_counter()
@@ -81,8 +83,17 @@ async def _probe_llm(
             )
             latency = (time.perf_counter() - started) * 1000.0
             latencies_ms.append(latency)
+            action = str(payload.get("action") or "").strip().upper()
+            confidence = payload.get("confidence")
+            if action not in {"BUY", "SELL", "HOLD"}:
+                action = "INVALID"
+            actions.append(action)
+            try:
+                confidences.append(float(confidence))
+            except Exception:
+                pass
             sample = {
-                "action": str(payload.get("action", "")),
+                "action": action,
                 "confidence": payload.get("confidence"),
                 "reason": str(payload.get("reason", ""))[:200],
             }
@@ -92,12 +103,31 @@ async def _probe_llm(
             failures.append(f"{type(exc).__name__}: {exc}")
 
     ok_calls = max(0, len(latencies_ms) - len(failures))
+    action_breakdown = {
+        "BUY": int(sum(1 for item in actions if item == "BUY")),
+        "SELL": int(sum(1 for item in actions if item == "SELL")),
+        "HOLD": int(sum(1 for item in actions if item == "HOLD")),
+        "INVALID": int(sum(1 for item in actions if item == "INVALID")),
+    }
+    total_actions = max(1, int(len(actions)))
+    hold_rate = float(action_breakdown.get("HOLD", 0)) / float(total_actions)
+    rejection_rate = float(len(failures)) / float(max(1, int(rounds)))
+    avg_conf = (sum(confidences) / float(len(confidences))) if confidences else 0.0
     return {
         "label": label,
         "rounds": len(latencies_ms),
         "successes": ok_calls,
         "failures": len(failures),
         "failure_messages": failures[:6],
+        "action_breakdown": action_breakdown,
+        "hold_rate": round(hold_rate, 4),
+        "trade_intent_rate": round(
+            float(action_breakdown.get("BUY", 0) + action_breakdown.get("SELL", 0))
+            / float(total_actions),
+            4,
+        ),
+        "rejection_rate": round(rejection_rate, 4),
+        "avg_confidence": round(avg_conf, 4),
         "latency_ms": {
             "p50": _percentile(latencies_ms, 0.50),
             "p95": _percentile(latencies_ms, 0.95),
@@ -171,6 +201,7 @@ def _build_recommendations(report: Dict[str, Any]) -> List[str]:
         label = str(probe.get("label") or "llm")
         failures = int(probe.get("failures") or 0)
         p95 = float(((probe.get("latency_ms") or {}).get("p95") or 0.0))
+        hold_rate = float(probe.get("hold_rate") or 0.0)
         if failures > 0:
             if has_failover_snapshot:
                 recs.append(
@@ -183,6 +214,10 @@ def _build_recommendations(report: Dict[str, Any]) -> List[str]:
         if p95 > 3500:
             recs.append(
                 f"{label}: p95 latency {p95:.0f}ms is high; reduce max tokens or move heavier model to self-improvement lane."
+            )
+        if hold_rate > 0.85:
+            recs.append(
+                f"{label}: hold_rate {hold_rate:.2f} is high; review hard filters/confidence floor to reduce missed opportunities."
             )
     broker = dict(report.get("broker_health") or {})
     if broker and not bool(broker.get("ok")):

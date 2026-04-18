@@ -105,6 +105,23 @@ curl -s http://127.0.0.1:8091/llm/failover | jq
 curl -s http://127.0.0.1:8091/broker/health | jq
 ```
 
+## 5.1) Automatic model tournament (latency + hold-rate + rejection-rate)
+
+Run a tournament across local model profiles and auto-select winner by weighted score:
+
+```bash
+cd /opt/mempalace_ai
+. .venv/bin/activate
+python ops/tencent_model_tournament.py --symbol BTCUSD --rounds 4 --include-self-improvement --with-broker-health --output data/reports/tencent_model_tournament.json
+```
+
+Apply winner patch to `trading_ai/.env` automatically:
+
+```bash
+python ops/tencent_model_tournament.py --symbol BTCUSD --rounds 4 --include-self-improvement --with-broker-health --apply --output data/reports/tencent_model_tournament_apply.json
+sudo systemctl restart mempalace-trader
+```
+
 ## 6) Continuous deployment
 
 After secrets are configured, every push to `main` triggers deploy and service restart automatically.
