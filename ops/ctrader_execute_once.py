@@ -9,6 +9,7 @@ never interfere with Dexter's long-lived monitor/MT5 runtime.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import logging
 import re
@@ -23,7 +24,23 @@ BASE = Path(__file__).resolve().parent.parent
 if str(BASE) not in sys.path:
     sys.path.insert(0, str(BASE))
 
-from config import config  # noqa: E402
+def _load_root_config():
+    """
+    Load BASE/config.py explicitly.
+
+    In some deployments a sibling `config/` package can shadow `config.py`,
+    so plain `from config import config` resolves the wrong module.
+    """
+    config_py = BASE / "config.py"
+    spec = importlib.util.spec_from_file_location("dexter_runtime_config", config_py)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load config module from {config_py}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return getattr(module, "config")
+
+
+config = _load_root_config()  # noqa: E402
 from api.ctrader_token_manager import token_manager  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
