@@ -568,17 +568,20 @@ class CTraderDexterWorkerBroker(Broker):
             ask = bid + spread
         if bid is None or ask is None:
             return None
+        fetched_at_ts = time.time()
+        source_event_ts = _to_float(latest.get("event_ts"))
         snap = MarketSnapshot(
             symbol=token,
             bid=float(bid),
             ask=float(ask),
             mid=float(mid),
             spread=float(spread or max(ask - bid, 0.0)),
-            ts_unix=float(latest.get("event_ts") or time.time()),
+            ts_unix=float(fetched_at_ts),
             extra={
                 "venue": "ctrader_dexter_capture",
                 "environment": data.get("environment"),
                 "capture_status": data.get("status"),
+                "source_event_ts": float(source_event_ts) if source_event_ts is not None else None,
             },
         )
         self._quote_cache[token] = snap

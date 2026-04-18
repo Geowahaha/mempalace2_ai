@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+import time
 import unittest
 
 from trading_ai.integrations.ctrader_dexter_worker import (
+    CTraderDexterWorkerBroker,
     _compact_broker_comment,
     _worker_retry_attempts,
     _worker_retry_sleep_sec,
@@ -32,6 +34,32 @@ class ReconcileOpenPositionsTests(unittest.TestCase):
         self.assertEqual(_worker_retry_attempts("get_trendbars"), 3)
         self.assertEqual(_worker_retry_attempts("execute"), 1)
         self.assertLess(_worker_retry_sleep_sec("capture_market", 1), 1.0)
+
+    def test_extract_latest_snapshot_uses_fetch_time_for_cache_ttl(self):
+        broker = CTraderDexterWorkerBroker.__new__(CTraderDexterWorkerBroker)
+        broker._quote_cache = {}
+        payload = {
+            "ok": True,
+            "status": "captured_live",
+            "environment": "demo",
+            "spots": [
+                {
+                    "symbol": "BTCUSD",
+                    "bid": 64000.0,
+                    "ask": 64001.0,
+                    "event_ts": 1741564801.0,
+                }
+            ],
+        }
+        before = time.time()
+        snap = broker._extract_latest_snapshot("BTCUSD", payload)
+        after = time.time()
+
+        self.assertIsNotNone(snap)
+        assert snap is not None
+        self.assertGreaterEqual(snap.ts_unix, before - 0.5)
+        self.assertLessEqual(snap.ts_unix, after + 0.5)
+        self.assertEqual(snap.extra.get("source_event_ts"), 1741564801.0)
 
     def test_converts_ctrader_raw_volume_back_to_lots(self):
         broker = _StubBroker(
