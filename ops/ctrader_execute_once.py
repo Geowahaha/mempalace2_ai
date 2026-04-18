@@ -24,6 +24,12 @@ BASE = Path(__file__).resolve().parent.parent
 if str(BASE) not in sys.path:
     sys.path.insert(0, str(BASE))
 
+_ENV_PATHS = (
+    BASE / "trading_ai" / ".env",
+    BASE / ".env.local",
+    BASE / ".env",
+)
+
 def _load_root_config():
     """
     Load BASE/config.py explicitly.
@@ -141,6 +147,44 @@ def _load_payload(path: str | None) -> dict:
         return {}
 
 
+def _read_runtime_env_value(*keys: str) -> str:
+    for key in keys:
+        value = str(os.getenv(str(key), "") or "").strip()
+        if value:
+            return value
+    keyset = {str(k).strip() for k in keys if str(k).strip()}
+    if not keyset:
+        return ""
+    for path in _ENV_PATHS:
+        if not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            continue
+        for line in lines:
+            text = str(line or "").strip()
+            if not text or text.startswith("#") or "=" not in text:
+                continue
+            raw_key, _, raw_value = text.partition("=")
+            if str(raw_key).strip() in keyset:
+                value = str(raw_value or "").strip()
+                if value:
+                    return value
+    return ""
+
+
+def _bool_value(value, default: bool = False) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return bool(default)
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return bool(default)
+
+
 def _account_id_from_payload(payload: dict) -> int:
     explicit = _safe_int(payload.get("account_id"), 0)
     if explicit > 0:
@@ -175,14 +219,30 @@ def _account_id_from_payload(payload: dict) -> int:
     return 0
 
 
-def _resolve_host() -> tuple[str, int, str]:
-    override = str(getattr(config, "CTRADER_OPENAPI_PROTOBUF_HOST", "") or "").strip()
+def _resolve_host(account_id: int = 0) -> tuple[str, int, str]:
+    override = _read_runtime_env_value("CTRADER_OPENAPI_PROTOBUF_HOST") or str(
+        getattr(config, "CTRADER_OPENAPI_PROTOBUF_HOST", "") or ""
+    ).strip()
+    port_raw = _read_runtime_env_value("CTRADER_OPENAPI_PROTOBUF_PORT")
     try:
-        port = int(getattr(config, "CTRADER_OPENAPI_PROTOBUF_PORT", EndPoints.PROTOBUF_PORT) or EndPoints.PROTOBUF_PORT)
+        port = int(port_raw or getattr(config, "CTRADER_OPENAPI_PROTOBUF_PORT", EndPoints.PROTOBUF_PORT) or EndPoints.PROTOBUF_PORT)
     except Exception:
         port = int(EndPoints.PROTOBUF_PORT)
     port = max(1, min(port, 65535))
-    use_demo = bool(getattr(config, "CTRADER_USE_DEMO", False))
+    default_use_demo = bool(getattr(config, "CTRADER_USE_DEMO", False))
+    use_demo = _bool_value(_read_runtime_env_value("CTRADER_USE_DEMO"), default=default_use_demo)
+    if account_id > 0:
+        row = getattr(config, "find_ctrader_account", lambda *_args, **_kwargs: None)(str(account_id))
+        if isinstance(row, dict):
+            is_live = row.get("isLive", row.get("live"))
+            if isinstance(is_live, bool):
+                use_demo = not is_live
+            else:
+                live_hint = str(is_live or "").strip().lower()
+                if live_hint in {"1", "true", "yes", "on"}:
+                    use_demo = False
+                elif live_hint in {"0", "false", "no", "off"}:
+                    use_demo = True
     env = "demo" if use_demo else "live"
     if override:
         return override, port, env
@@ -404,10 +464,10 @@ def _quantize_price(value: float, digits: int) -> float:
 
 @defer.inlineCallbacks
 def _workflow(mode: str, payload: dict):
-    host, port, environment = _resolve_host()
+    account_id = _account_id_from_payload(payload)
+    host, port, environment = _resolve_host(account_id=account_id)
     if mode == "accounts":
         host, port, environment = EndPoints.PROTOBUF_LIVE_HOST, int(EndPoints.PROTOBUF_PORT), "live"
-    account_id = _account_id_from_payload(payload)
     creds = token_manager.get_credentials() if token_manager else {}
     client_id = str((creds or {}).get("client_id") or getattr(config, "CTRADER_OPENAPI_CLIENT_ID", "") or "").strip()
     client_secret = str((creds or {}).get("client_secret") or getattr(config, "CTRADER_OPENAPI_CLIENT_SECRET", "") or "").strip()
