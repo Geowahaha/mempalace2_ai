@@ -408,15 +408,20 @@ def _workflow(mode: str, payload: dict):
     if mode == "accounts":
         host, port, environment = EndPoints.PROTOBUF_LIVE_HOST, int(EndPoints.PROTOBUF_PORT), "live"
     account_id = _account_id_from_payload(payload)
-    client_id = str(getattr(config, "CTRADER_OPENAPI_CLIENT_ID", "") or "").strip()
-    client_secret = str(getattr(config, "CTRADER_OPENAPI_CLIENT_SECRET", "") or "").strip()
+    creds = token_manager.get_credentials() if token_manager else {}
+    client_id = str((creds or {}).get("client_id") or getattr(config, "CTRADER_OPENAPI_CLIENT_ID", "") or "").strip()
+    client_secret = str((creds or {}).get("client_secret") or getattr(config, "CTRADER_OPENAPI_CLIENT_SECRET", "") or "").strip()
     access_token, refresh_token = _access_token_candidates()
 
     if not client_id or not client_secret:
         defer.returnValue({
             "ok": False,
             "status": "credentials_missing",
-            "message": "client id/secret missing",
+            "message": (
+                "client id/secret missing (token manager + config unresolved). "
+                "Set CTRADER_OPENAPI_CLIENT_ID/CTRADER_OPENAPI_CLIENT_SECRET "
+                "or OpenAPI_ClientID/OpenAPI_Secreat in trading_ai/.env"
+            ),
             "account_id": account_id or None,
         })
         return
@@ -460,8 +465,8 @@ def _workflow(mode: str, payload: dict):
             _desc = str(getattr(app_payload, "description", "") or "")
             _cred = (
                 "Protobuf application auth (clientId+clientSecret) failed — before access token. "
-                "Values must come from Dexter `.env.local` (CTRADER_OPENAPI_CLIENT_ID/SECRET or OpenAPI_ClientID/OpenAPI_Secreat): "
-                "Mempalac `CTRADER_*` in `trading_ai/.env` is not read by this worker subprocess. "
+                "Values must match OpenAPI app credentials (CTRADER_OPENAPI_CLIENT_ID/SECRET or OpenAPI_ClientID/OpenAPI_Secreat). "
+                "Worker reads credentials through token_manager + runtime env files. "
                 "Match https://openapi.ctrader.com exactly; no quotes or trailing spaces. "
                 "If the app or secret was rotated, update both and refresh OAuth tokens."
             )
