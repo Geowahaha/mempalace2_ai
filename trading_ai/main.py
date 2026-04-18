@@ -2273,6 +2273,16 @@ async def learning_loop(settings: Settings) -> None:
                         int(adaptive_pre_filter_meta.get("support") or 0),
                         int(adaptive_pre_filter_meta.get("caution") or 0),
                     )
+                elif bool(settings.performance_stage_telemetry_enabled):
+                    log.info(
+                        "Adaptive hard-filter kept pre-LLM veto lane=%s filter=%s blocked=%s support=%s/%s recent_edge=%.3f",
+                        anticipated_strategy_key,
+                        str(adaptive_pre_filter_meta.get("veto") or pre_llm_veto or ""),
+                        str(adaptive_pre_filter_meta.get("blocked_reason") or "unknown"),
+                        int(adaptive_pre_filter_meta.get("support") or 0),
+                        int(adaptive_pre_filter_meta.get("caution") or 0),
+                        float(adaptive_pre_filter_meta.get("recent_edge") or 0.0),
+                    )
             loss_streak_override = _loss_streak_override_payload(
                 veto=pre_llm_veto,
                 anticipated_action=anticipated_action,
@@ -2467,6 +2477,16 @@ async def learning_loop(settings: Settings) -> None:
                         float(adaptive_veto_meta.get("edge") or 0.0),
                         int(adaptive_veto_meta.get("support") or 0),
                         int(adaptive_veto_meta.get("caution") or 0),
+                    )
+                elif bool(settings.performance_stage_telemetry_enabled):
+                    log.info(
+                        "Adaptive hard-filter kept post-LLM veto lane=%s filter=%s blocked=%s support=%s/%s recent_edge=%.3f",
+                        decision_strategy_key,
+                        str(adaptive_veto_meta.get("veto") or veto or ""),
+                        str(adaptive_veto_meta.get("blocked_reason") or "unknown"),
+                        int(adaptive_veto_meta.get("support") or 0),
+                        int(adaptive_veto_meta.get("caution") or 0),
+                        float(adaptive_veto_meta.get("recent_edge") or 0.0),
                     )
             if loss_streak_override and str(veto).startswith("loss_streak_"):
                 veto = None
