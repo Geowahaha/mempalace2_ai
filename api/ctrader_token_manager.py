@@ -40,6 +40,41 @@ _STATE_FILE = "data/runtime/ctrader_token_state.json"
 _MAX_REFRESH_RETRIES = 5
 _BACKOFF_BASE_SEC = 2.0
 _BACKOFF_MAX_SEC = 120.0
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_ENV_PATHS = (
+    _REPO_ROOT / "trading_ai" / ".env",
+    _REPO_ROOT / ".env.local",
+    _REPO_ROOT / ".env",
+)
+
+
+def _read_env_value(*keys: str) -> str:
+    for key in keys:
+        val = str(os.getenv(str(key), "") or "").strip()
+        if val:
+            return val
+
+    keyset = {str(k).strip() for k in keys if str(k).strip()}
+    if not keyset:
+        return ""
+    for path in _ENV_PATHS:
+        if not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception as exc:
+            logger.debug("[TokenManager] env read error %s: %s", path, exc)
+            continue
+        for line in lines:
+            text = str(line or "").strip()
+            if not text or text.startswith("#") or "=" not in text:
+                continue
+            k, _, v = text.partition("=")
+            if str(k).strip() in keyset:
+                value = str(v).strip()
+                if value:
+                    return value
+    return ""
 
 
 class CTraderTokenManager:
@@ -59,26 +94,36 @@ class CTraderTokenManager:
         self._telegram_alerted = False
 
     def _state_path(self) -> Path:
-        try:
-            from config import config as _cfg
-            db_path = str(getattr(_cfg, "CTRADER_OPENAPI_DB_PATH", "") or "")
-            if db_path:
+        db_path = _read_env_value("CTRADER_OPENAPI_DB_PATH")
+        if db_path:
+            try:
+                return Path(db_path).expanduser().resolve().parent.parent / "data" / "runtime" / "ctrader_token_state.json"
+            except Exception:
                 return Path(db_path).parent.parent / "data" / "runtime" / "ctrader_token_state.json"
-        except Exception:
-            pass
         return Path(_STATE_FILE)
 
     def _load_config(self):
         """Load credentials from config (env vars)."""
         try:
-            from config import config as _cfg
-            self._client_id = str(getattr(_cfg, "CTRADER_OPENAPI_CLIENT_ID", "") or "").strip()
-            self._client_secret = str(getattr(_cfg, "CTRADER_OPENAPI_CLIENT_SECRET", "") or "").strip()
-            self._redirect_uri = str(getattr(_cfg, "CTRADER_OPENAPI_REDIRECT_URI", "http://localhost") or "http://localhost").strip()
-
-            # Access/refresh from env — used as seed, NOT final source
-            env_access = str(getattr(_cfg, "CTRADER_OPENAPI_ACCESS_TOKEN", "") or "").strip()
-            env_refresh = str(getattr(_cfg, "CTRADER_OPENAPI_REFRESH_TOKEN", "") or "").strip()
+            self._client_id = _read_env_value("CTRADER_OPENAPI_CLIENT_ID", "OpenAPI_ClientID")
+            self._client_secret = _read_env_value(
+                "CTRADER_OPENAPI_CLIENT_SECRET",
+                "OpenAPI_Secreat",
+                "OpenAPI_Secret",
+            )
+            self._redirect_uri = _read_env_value("CTRADER_OPENAPI_REDIRECT_URI") or "http://localhost"
+            # Canonical first, legacy aliases only as last-resort migration fallback.
+            env_access = _read_env_value(
+                "CTRADER_OPENAPI_ACCESS_TOKEN",
+                "OpenAPI_Access_token_API_key3",
+                "new_Accesstoken",
+                "new_Access_token",
+            )
+            env_refresh = _read_env_value(
+                "CTRADER_OPENAPI_REFRESH_TOKEN",
+                "OpenAPI_Refresh_token_API_key3",
+                "new_Refresh_token",
+            )
             return env_access, env_refresh
         except Exception as e:
             logger.warning("[TokenManager] config load error: %s", e)
