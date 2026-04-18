@@ -144,6 +144,72 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(settings.ctrader_quote_background_refresh_enabled)
             self.assertEqual(settings.ctrader_capture_max_events, 12)
 
+    def test_backtest_learning_settings_load_and_paths_normalize(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = (root / "runtime_data").resolve()
+            dexter_root = (root / "dexter_source").resolve()
+            env_path = root / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        f"DATA_DIR={data_dir}",
+                        "BACKTEST_LEARNING_ENABLED=true",
+                        "BACKTEST_LEARNING_INTERVAL_SEC=3600",
+                        "BACKTEST_LEARNING_FAILURE_BACKOFF_SEC=600",
+                        "BACKTEST_LEARNING_LOOKBACK_DAYS=14",
+                        "BACKTEST_LEARNING_END_OFFSET_DAYS=1",
+                        "BACKTEST_LEARNING_TIMEZONE=Asia/Bangkok",
+                        "BACKTEST_LEARNING_TIMEFRAME=15m",
+                        "BACKTEST_LEARNING_SOURCE_POLICY=real_first",
+                        f"BACKTEST_LEARNING_DEXTER_ROOT={dexter_root}",
+                        "BACKTEST_LEARNING_OUTPUT_ROOT=./backtests_auto",
+                        "BACKTEST_LEARNING_TIMEOUT_SEC=1500",
+                        "BACKTEST_LEARNING_POLICY_APPLY_ENABLED=true",
+                        "BACKTEST_LEARNING_POLICY_MAX_SHIFT=0.08",
+                        "BACKTEST_LEARNING_MIN_CLOSED_TRADES=16",
+                        "BACKTEST_LEARNING_MIN_WIN_RATE=0.56",
+                        "BACKTEST_LEARNING_MIN_AVG_PROFIT=0.02",
+                        "BACKTEST_LEARNING_MAX_DRAWDOWN=1.1",
+                        "BACKTEST_LEARNING_POLICY_PATH=./backtest_learning_policy.json",
+                        "BACKTEST_LEARNING_STATE_PATH=./backtest_learning_state.json",
+                        "BACKTEST_LEARNING_SUMMARY_PATH=./backtest_learning_summary.md",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+
+            self.assertTrue(settings.backtest_learning_enabled)
+            self.assertEqual(settings.backtest_learning_interval_sec, 3600)
+            self.assertEqual(settings.backtest_learning_failure_backoff_sec, 600)
+            self.assertEqual(settings.backtest_learning_lookback_days, 14)
+            self.assertEqual(settings.backtest_learning_end_offset_days, 1)
+            self.assertEqual(settings.backtest_learning_timezone, "Asia/Bangkok")
+            self.assertEqual(settings.backtest_learning_timeframe, "15m")
+            self.assertEqual(settings.backtest_learning_source_policy, "real_first")
+            self.assertEqual(settings.backtest_learning_timeout_sec, 1500)
+            self.assertEqual(settings.backtest_learning_policy_max_shift, 0.08)
+            self.assertEqual(settings.backtest_learning_min_closed_trades, 16)
+            self.assertEqual(settings.backtest_learning_min_win_rate, 0.56)
+            self.assertEqual(settings.backtest_learning_min_avg_profit, 0.02)
+            self.assertEqual(settings.backtest_learning_max_drawdown, 1.1)
+            self.assertEqual(settings.backtest_learning_dexter_root, dexter_root)
+            self.assertEqual(settings.backtest_learning_output_root, (data_dir / "backtests_auto").resolve())
+            self.assertEqual(
+                settings.backtest_learning_policy_path,
+                (data_dir / "backtest_learning_policy.json").resolve(),
+            )
+            self.assertEqual(
+                settings.backtest_learning_state_path,
+                (data_dir / "backtest_learning_state.json").resolve(),
+            )
+            self.assertEqual(
+                settings.backtest_learning_summary_path,
+                (data_dir / "backtest_learning_summary.md").resolve(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

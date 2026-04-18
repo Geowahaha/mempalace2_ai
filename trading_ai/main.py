@@ -62,6 +62,7 @@ from trading_ai.core.portfolio_intelligence import (
 from trading_ai.core.correlation_engine import CorrelationEngine, active_strategy_keys_from_registry
 from trading_ai.core.strategy import RiskManager, evaluate_outcome
 from trading_ai.core.strategy_evolution import StrategyRegistry, build_strategy_key
+from trading_ai.core.backtest_learning import BacktestLearningSupervisor
 from trading_ai.integrations.ctrader import CTraderBroker, CTraderConfig
 from trading_ai.integrations.ctrader_dexter_worker import CTraderDexterWorkerBroker
 from trading_ai.integrations.failover import FailoverProvider, failover_runtime_snapshot
@@ -611,6 +612,7 @@ def _maybe_soften_hard_filter_veto(
     weekly_lane_profile: Dict[str, Any],
     risk: RiskManager,
     settings: Settings,
+    adaptive_overrides: Optional[Dict[str, Any]] = None,
 ) -> tuple[Optional[str], Dict[str, Any]]:
     meta: Dict[str, Any] = {
         "applied": False,
@@ -629,6 +631,24 @@ def _maybe_soften_hard_filter_veto(
     if veto_key not in softenable:
         meta["blocked_reason"] = "veto_not_softenable"
         return veto, meta
+
+    overrides = dict(adaptive_overrides or {})
+
+    def _override_int(key: str, fallback: int) -> int:
+        if key in overrides:
+            try:
+                return int(float(overrides[key]))
+            except (TypeError, ValueError):
+                pass
+        return int(fallback)
+
+    def _override_float(key: str, fallback: float) -> float:
+        if key in overrides:
+            try:
+                return float(overrides[key])
+            except (TypeError, ValueError):
+                pass
+        return float(fallback)
 
     side = str(action or "").upper()
     if side not in {"BUY", "SELL"}:
@@ -674,11 +694,20 @@ def _maybe_soften_hard_filter_veto(
         }
     )
 
-    min_trades = int(settings.hard_filter_adaptive_min_trades)
-    support_edge_min = int(settings.hard_filter_adaptive_support_edge_min)
-    max_loss_rate = float(settings.hard_filter_adaptive_max_loss_rate)
-    recent_window = max(1, int(settings.hard_filter_adaptive_recent_window))
-    recent_min_samples = max(1, int(settings.hard_filter_adaptive_recent_min_samples))
+    min_trades = _override_int("hard_filter_adaptive_min_trades", settings.hard_filter_adaptive_min_trades)
+    support_edge_min = _override_int(
+        "hard_filter_adaptive_support_edge_min",
+        settings.hard_filter_adaptive_support_edge_min,
+    )
+    max_loss_rate = _override_float("hard_filter_adaptive_max_loss_rate", settings.hard_filter_adaptive_max_loss_rate)
+    recent_window = max(
+        1,
+        _override_int("hard_filter_adaptive_recent_window", settings.hard_filter_adaptive_recent_window),
+    )
+    recent_min_samples = max(
+        1,
+        _override_int("hard_filter_adaptive_recent_min_samples", settings.hard_filter_adaptive_recent_min_samples),
+    )
     recent_scores = [int(score) for score in list(risk.recent_scores)[-recent_window:]]
     recent_samples = len(recent_scores)
     recent_wins = sum(1 for score in recent_scores if score > 0)
@@ -696,12 +725,18 @@ def _maybe_soften_hard_filter_veto(
         }
     )
 
-    if recent_samples >= recent_min_samples and recent_edge <= float(settings.hard_filter_adaptive_recent_neg_edge_block):
+    if recent_samples >= recent_min_samples and recent_edge <= _override_float(
+        "hard_filter_adaptive_recent_neg_edge_block",
+        settings.hard_filter_adaptive_recent_neg_edge_block,
+    ):
         meta["blocked_reason"] = f"recent_edge_negative:{recent_edge:.3f}"
         return veto, meta
 
     support_edge_required = support_edge_min
-    if recent_samples >= recent_min_samples and recent_edge >= float(settings.hard_filter_adaptive_recent_pos_edge_bonus):
+    if recent_samples >= recent_min_samples and recent_edge >= _override_float(
+        "hard_filter_adaptive_recent_pos_edge_bonus",
+        settings.hard_filter_adaptive_recent_pos_edge_bonus,
+    ):
         support_edge_required = max(0, support_edge_min - 1)
     support_edge_guard = max(2, support_edge_required)
     meta["support_edge_required"] = support_edge_required
@@ -745,23 +780,25 @@ def _maybe_soften_hard_filter_veto(
             "edge": round(edge_score, 4),
             "impulse_support": round(impulse_support, 4),
             "spread_pct": round(spread_pct, 6),
+            "policy_override_active": bool(overrides),
         }
     )
 
     if not aligned:
         meta["blocked_reason"] = "action_trend_misaligned"
         return veto, meta
-    if opportunity < float(settings.hard_filter_adaptive_min_opportunity):
+    if opportunity < _override_float("hard_filter_adaptive_min_opportunity", settings.hard_filter_adaptive_min_opportunity):
         meta["blocked_reason"] = "opportunity_too_low"
         return veto, meta
-    if risk_score > float(settings.hard_filter_adaptive_max_risk):
+    if risk_score > _override_float("hard_filter_adaptive_max_risk", settings.hard_filter_adaptive_max_risk):
         meta["blocked_reason"] = "risk_too_high"
         return veto, meta
-    if edge_score < float(settings.hard_filter_adaptive_min_edge):
+    if edge_score < _override_float("hard_filter_adaptive_min_edge", settings.hard_filter_adaptive_min_edge):
         meta["blocked_reason"] = "edge_too_low"
         return veto, meta
-    if veto_key in {"trend_RANGE", "structure_consolidation"} and impulse_support < float(
-        settings.hard_filter_adaptive_min_impulse_support
+    if veto_key in {"trend_RANGE", "structure_consolidation"} and impulse_support < _override_float(
+        "hard_filter_adaptive_min_impulse_support",
+        settings.hard_filter_adaptive_min_impulse_support,
     ):
         meta["blocked_reason"] = "impulse_support_too_low"
         return veto, meta
@@ -1648,6 +1685,18 @@ async def learning_loop(settings: Settings) -> None:
 
     weekly_lane_profile: Dict[str, Any] = {}
     weekly_lane_last_refresh_ts = 0.0
+    backtest_learning: Optional[BacktestLearningSupervisor] = None
+    backtest_learning_task: Optional[asyncio.Task] = None
+    adaptive_hard_filter_overrides: Dict[str, Any] = {}
+    if settings.backtest_learning_enabled:
+        backtest_learning = BacktestLearningSupervisor(settings=settings)
+        adaptive_hard_filter_overrides = backtest_learning.current_overrides()
+        if adaptive_hard_filter_overrides:
+            log.info(
+                "Backtest-learning policy loaded overrides=%s path=%s",
+                len(adaptive_hard_filter_overrides),
+                settings.backtest_learning_policy_path,
+            )
 
     async def refresh_weekly_lane_profile(*, force: bool = False) -> None:
         nonlocal weekly_lane_profile, weekly_lane_last_refresh_ts
@@ -2020,6 +2069,38 @@ async def learning_loop(settings: Settings) -> None:
             await refresh_weekly_lane_profile()
             _mark_stage_timing(stage_ms, "weekly_lane_refresh_ms", stage_started_at)
 
+            if backtest_learning is not None:
+                if backtest_learning_task is not None and backtest_learning_task.done():
+                    try:
+                        policy = backtest_learning_task.result()
+                        if policy:
+                            q_gate = dict(policy.get("quality_gate") or {})
+                            metrics = dict(policy.get("metrics") or {})
+                            log.info(
+                                "Backtest-learning policy updated mode=%s quality=%s closed=%s win_rate=%.3f blocked_ratio=%.3f overrides=%s",
+                                str(policy.get("mode") or "hold"),
+                                bool(q_gate.get("passed", False)),
+                                int(q_gate.get("closed_trades") or 0),
+                                float(q_gate.get("win_rate") or 0.0),
+                                float(metrics.get("hard_filter_block_ratio") or 0.0),
+                                len(dict(policy.get("effective_overrides") or {})),
+                            )
+                    except Exception as exc:
+                        log.warning("Backtest-learning task failed: %s", exc)
+                    backtest_learning_task = None
+                    adaptive_hard_filter_overrides = backtest_learning.current_overrides()
+
+                if backtest_learning_task is None and backtest_learning.should_run():
+                    backtest_learning_task = asyncio.create_task(backtest_learning.trigger_if_due())
+                    log.info(
+                        "Backtest-learning cycle queued symbol=%s lookback_days=%s timeframe=%s",
+                        settings.symbol,
+                        settings.backtest_learning_lookback_days,
+                        settings.backtest_learning_timeframe,
+                    )
+
+                adaptive_hard_filter_overrides = backtest_learning.current_overrides()
+
             if (
                 settings.strategy_evolution_v2_enabled
                 and settings.strategy_aging_enabled
@@ -2098,6 +2179,7 @@ async def learning_loop(settings: Settings) -> None:
                             weekly_lane_profile=weekly_lane_profile,
                             risk=risk,
                             settings=settings,
+                            adaptive_overrides=adaptive_hard_filter_overrides,
                         )
                         if adaptive_meta.get("applied") and relaxed_veto is None:
                             opportunity = float(side_assessment.get("opportunity_score") or 0.0)
@@ -2321,6 +2403,7 @@ async def learning_loop(settings: Settings) -> None:
                     weekly_lane_profile=weekly_lane_profile,
                     risk=risk,
                     settings=settings,
+                    adaptive_overrides=adaptive_hard_filter_overrides,
                 )
                 if adaptive_pre_filter_meta.get("applied"):
                     log.info(
@@ -2526,6 +2609,7 @@ async def learning_loop(settings: Settings) -> None:
                     weekly_lane_profile=weekly_lane_profile,
                     risk=risk,
                     settings=settings,
+                    adaptive_overrides=adaptive_hard_filter_overrides,
                 )
                 if adaptive_veto_meta.get("applied"):
                     log.info(

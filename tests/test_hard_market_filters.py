@@ -284,6 +284,58 @@ class HardMarketFilterTests(unittest.TestCase):
         self.assertTrue(meta.get("applied"))
         self.assertEqual(int(meta.get("support_edge_required") or 0), 0)
 
+    def test_adaptive_hard_filter_accepts_runtime_policy_overrides(self) -> None:
+        settings = self._settings()
+        risk = self._risk()
+        risk.recent_scores = [
+            TradeScore.LOSS,
+            TradeScore.LOSS,
+            TradeScore.NEUTRAL,
+            TradeScore.LOSS,
+        ]
+        features = {
+            "trend_direction": "DOWN",
+            "volatility": "HIGH",
+            "spread_pct": 0.00008,
+            "session": "NY",
+        }
+        veto, meta = _maybe_soften_hard_filter_veto(
+            veto="structure_consolidation",
+            action="SELL",
+            features=features,
+            assessment={
+                "opportunity_score": 0.74,
+                "risk_score": 0.44,
+                "impulse_support": 0.88,
+            },
+            strategy_key="DOWN*HIGH*NY_trend_follow",
+            weekly_lane_profile={
+                "mempalace_strategy_lanes": {
+                    "DOWN*HIGH*NY_trend_follow": {
+                        "classification": "opportunity",
+                        "trades": 6,
+                        "wins": 3,
+                        "losses": 2,
+                        "win_rate": 0.5,
+                        "loss_rate": 0.3333,
+                        "missed_opportunities": 5,
+                        "prevented_bad": 1,
+                        "shadow_blocked_wins": 1,
+                        "shadow_blocked_losses": 0,
+                    }
+                }
+            },
+            risk=risk,
+            settings=settings,
+            adaptive_overrides={
+                "hard_filter_adaptive_recent_neg_edge_block": -0.9,
+                "hard_filter_adaptive_min_impulse_support": 0.60,
+            },
+        )
+        self.assertIsNone(veto)
+        self.assertTrue(meta.get("applied"))
+        self.assertTrue(meta.get("policy_override_active"))
+
 
 if __name__ == "__main__":
     unittest.main()

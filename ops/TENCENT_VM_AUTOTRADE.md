@@ -149,6 +149,38 @@ Check next schedule:
 systemctl list-timers --all | grep mempalace-hermes-autotune
 ```
 
+## 5.3) Backtest-learning lane (continuous quality-gated policy updates)
+
+Enable periodic research backtests that auto-adjust only adaptive hard-filter thresholds (risk rails stay intact):
+
+```bash
+cd /opt/mempalace_ai
+grep -q '^BACKTEST_LEARNING_ENABLED=' trading_ai/.env && \
+  sed -i 's/^BACKTEST_LEARNING_ENABLED=.*/BACKTEST_LEARNING_ENABLED=true/' trading_ai/.env || \
+  echo 'BACKTEST_LEARNING_ENABLED=true' >> trading_ai/.env
+grep -q '^BACKTEST_LEARNING_INTERVAL_SEC=' trading_ai/.env && \
+  sed -i 's/^BACKTEST_LEARNING_INTERVAL_SEC=.*/BACKTEST_LEARNING_INTERVAL_SEC=21600/' trading_ai/.env || \
+  echo 'BACKTEST_LEARNING_INTERVAL_SEC=21600' >> trading_ai/.env
+grep -q '^BACKTEST_LEARNING_SOURCE_POLICY=' trading_ai/.env && \
+  sed -i 's/^BACKTEST_LEARNING_SOURCE_POLICY=.*/BACKTEST_LEARNING_SOURCE_POLICY=real_only/' trading_ai/.env || \
+  echo 'BACKTEST_LEARNING_SOURCE_POLICY=real_only' >> trading_ai/.env
+sudo systemctl restart mempalace-trader
+```
+
+Validate policy updates:
+
+```bash
+sudo journalctl -u mempalace-trader -n 200 --no-pager | \
+  egrep -i "Backtest-learning cycle queued|Backtest-learning policy updated|BacktestLearning:"
+```
+
+Read latest generated policy:
+
+```bash
+cat /opt/mempalace_ai/data/backtest_learning_policy.json | jq .
+cat /opt/mempalace_ai/data/backtest_learning_summary.md
+```
+
 ## 6) Continuous deployment
 
 After secrets are configured, every push to `main` triggers deploy and service restart automatically.
