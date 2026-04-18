@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dexter Financial Trader Designer"
+  short_description: "Design professional trading workflows and signal playbooks"
+  default_prompt: "Use -financial-professional-trader-designer to design a professional trade plan with risk controls."

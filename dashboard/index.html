@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dexter Pro — Strategy Analytics</title>
+<style>
+/* ── Theme Variables ───────────────────────────────────────────────────── */
+:root {
+    --bg-page: #f4f5f7;
+    --bg-card: #fff;
+    --bg-header: #1a1a2e;
+    --bg-controls: #fff;
+    --bg-banner: #1a1a2e;
+    --bg-row-even: #f8fafc;
+    --bg-row-hover: #f1f5f9;
+    --bg-totals: #1a1a2e;
+    --bg-input: #fff;
+    --border: #e2e8f0;
+    --border-row: #f1f5f9;
+    --border-th: #1a1a2e;
+    --text-primary: #1a1a2e;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    --text-on-dark: #fff;
+    --text-banner: #94a3b8;
+    --pill-bg: #fff;
+    --pill-border: #cbd5e1;
+    --pill-active-bg: #1a1a2e;
+    --pill-active-text: #fff;
+    --match-bar-bg: #e2e8f0;
+    --badge-info-bg: #eff6ff;
+    --badge-info-text: #3b82f6;
+    --badge-warn-bg: #fef3c7;
+    --badge-warn-text: #d97706;
+    --status-live-bg: #dcfce7;
+    --status-live-text: #16a34a;
+    --status-canary-bg: #fef3c7;
+    --status-canary-text: #d97706;
+    --status-probe-bg: #eff6ff;
+    --status-probe-text: #3b82f6;
+    --status-good-bg: #dcfce7;
+    --status-good-text: #16a34a;
+    --status-fair-bg: #fef3c7;
+    --status-fair-text: #d97706;
+    --status-poor-bg: #fef2f2;
+    --status-poor-text: #ef4444;
+    --status-info-bg: #f1f5f9;
+    --status-info-text: #94a3b8;
+    --real-col-bg: #f0fdf4;
+    --real-col-text: #16a34a;
+    --bt-col-bg: #eff6ff;
+    --bt-col-text: #3b82f6;
+    --spinner-track: #e2e8f0;
+    --spinner-head: #1a1a2e;
+    --color-pos: #10b981;
+    --color-neg: #ef4444;
+}
+
+[data-theme="dark"] {
+    --bg-page: #0f1117;
+    --bg-card: #1a1d28;
+    --bg-header: #0d0f15;
+    --bg-controls: #151821;
+    --bg-banner: #0d0f15;
+    --bg-row-even: #1e2130;
+    --bg-row-hover: #252838;
+    --bg-totals: #0d0f15;
+    --bg-input: #252838;
+    --border: #2a2d3a;
+    --border-row: #222532;
+    --border-th: #3b82f6;
+    --text-primary: #e2e8f0;
+    --text-secondary: #8892a4;
+    --text-muted: #5a6478;
+    --text-on-dark: #f0f2f5;
+    --text-banner: #6b7588;
+    --pill-bg: #1a1d28;
+    --pill-border: #2a2d3a;
+    --pill-active-bg: #3b82f6;
+    --pill-active-text: #fff;
+    --match-bar-bg: #2a2d3a;
+    --badge-info-bg: #1e293b;
+    --badge-info-text: #60a5fa;
+    --badge-warn-bg: #2a2218;
+    --badge-warn-text: #fbbf24;
+    --status-live-bg: #14261a;
+    --status-live-text: #34d399;
+    --status-canary-bg: #2a2218;
+    --status-canary-text: #fbbf24;
+    --status-probe-bg: #1e293b;
+    --status-probe-text: #60a5fa;
+    --status-good-bg: #14261a;
+    --status-good-text: #34d399;
+    --status-fair-bg: #2a2218;
+    --status-fair-text: #fbbf24;
+    --status-poor-bg: #2a1515;
+    --status-poor-text: #f87171;
+    --status-info-bg: #1e2130;
+    --status-info-text: #5a6478;
+    --real-col-bg: #14261a;
+    --real-col-text: #34d399;
+    --bt-col-bg: #1e293b;
+    --bt-col-text: #60a5fa;
+    --spinner-track: #2a2d3a;
+    --spinner-head: #3b82f6;
+    --color-pos: #34d399;
+    --color-neg: #f87171;
+}
+
+/* ── Reset & Base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: var(--bg-page);
+    line-height: 1.5;
+    transition: background 0.25s, color 0.25s;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────── */
+.header {
+    background: var(--bg-header);
+    color: var(--text-on-dark);
+    padding: 16px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
+.header h1 span { color: var(--text-secondary); font-weight: 400; }
+.header .header-right { display: flex; align-items: center; gap: 16px; }
+.header .account { font-size: 12px; color: var(--text-muted); }
+
+/* ── Theme Toggle ──────────────────────────────────────────────────────── */
+.theme-toggle {
+    width: 40px; height: 22px;
+    background: #3b3f50;
+    border-radius: 11px;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.25s;
+    padding: 0;
+}
+.theme-toggle::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 16px; height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.25s;
+}
+.theme-toggle.dark { background: #3b82f6; }
+.theme-toggle.dark::after { transform: translateX(18px); }
+.theme-label { font-size: 11px; color: var(--text-muted); }
+
+/* ── Controls ──────────────────────────────────────────────────────────── */
+.controls {
+    background: var(--bg-controls);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.symbol-pills { display: flex; gap: 4px; }
+.symbol-pill {
+    padding: 6px 16px;
+    border: 1px solid var(--pill-border);
+    border-radius: 4px;
+    background: var(--pill-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.15s;
+}
+.symbol-pill:hover { border-color: var(--text-primary); }
+.symbol-pill.active { background: var(--pill-active-bg); color: var(--pill-active-text); border-color: var(--pill-active-bg); }
+.control-group { display: flex; align-items: center; gap: 6px; }
+.control-group label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; font-weight: 600; }
+.control-group input, .control-group select {
+    padding: 5px 10px;
+    border: 1px solid var(--pill-border);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+    background: var(--bg-input);
+    color: var(--text-primary);
+}
+.btn {
+    padding: 6px 20px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-primary { background: var(--pill-active-bg); color: var(--pill-active-text); }
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary:disabled { background: var(--text-muted); cursor: not-allowed; }
+.btn-outline { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--pill-border); }
+.btn-outline:hover { border-color: var(--text-primary); }
+.controls .spacer { flex: 1; }
+.bt-status { font-size: 11px; color: var(--text-secondary); }
+.bt-status.running { color: #f59e0b; }
+.bt-status.done { color: var(--color-pos); }
+
+/* ── Main Layout ───────────────────────────────────────────────────────── */
+.main { max-width: 1440px; margin: 0 auto; padding: 24px 32px; }
+
+/* ── Metric Cards ──────────────────────────────────────────────────────── */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+}
+.card .card-label { font-size: 10px; text-transform: uppercase; color: var(--text-secondary); font-weight: 600; letter-spacing: 0.5px; margin-bottom: 8px; }
+.card .card-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 2px; }
+.card .card-tag { font-size: 10px; color: var(--text-muted); font-weight: 500; }
+.card .card-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.card .card-value.sm { font-size: 14px; font-weight: 600; }
+.card .card-value.pos { color: var(--color-pos); }
+.card .card-value.neg { color: var(--color-neg); }
+.card .card-value.neutral { color: var(--text-secondary); }
+
+/* ── Section ───────────────────────────────────────────────────────────── */
+.section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+.section-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.section-header h2 { font-size: 14px; font-weight: 600; }
+.section-header .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+.badge-info { background: var(--badge-info-bg); color: var(--badge-info-text); }
+.badge-warn { background: var(--badge-warn-bg); color: var(--badge-warn-text); }
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; }
+thead th {
+    text-align: center;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border-th);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+tbody td {
+    text-align: center;
+    padding: 7px 12px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-row);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+tbody tr:nth-child(even) { background: var(--bg-row-even); }
+tbody tr:hover { background: var(--bg-row-hover); }
+td.left { text-align: left; }
+td.right { text-align: right; }
+.pos { color: var(--color-pos); }
+.neg { color: var(--color-neg); }
+.muted { color: var(--text-muted); }
+.bold { font-weight: 700; }
+
+/* Totals row (cTrader style) */
+tr.totals-row {
+    background: var(--bg-totals) !important;
+    color: var(--text-on-dark);
+}
+tr.totals-row td { color: var(--text-on-dark); font-weight: 700; border-bottom: none; }
+
+/* ── Status badges ─────────────────────────────────────────────────────── */
+.status {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+.status-live { background: var(--status-live-bg); color: var(--status-live-text); }
+.status-canary { background: var(--status-canary-bg); color: var(--status-canary-text); }
+.status-probe { background: var(--status-probe-bg); color: var(--status-probe-text); }
+.status-good { background: var(--status-good-bg); color: var(--status-good-text); }
+.status-fair { background: var(--status-fair-bg); color: var(--status-fair-text); }
+.status-poor { background: var(--status-poor-bg); color: var(--status-poor-text); }
+.status-info { background: var(--status-info-bg); color: var(--status-info-text); }
+
+/* ── Match indicator ───────────────────────────────────────────────────── */
+.match-bar {
+    display: inline-block;
+    width: 50px;
+    height: 6px;
+    background: var(--match-bar-bg);
+    border-radius: 3px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+.match-bar .fill { height: 100%; border-radius: 3px; }
+
+/* ── Grid layouts ──────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+
+/* ── Comparison highlight ──────────────────────────────────────────────── */
+.comparison-table thead th.real-col { background: var(--real-col-bg); color: var(--real-col-text); border-bottom-color: var(--real-col-text); }
+.comparison-table thead th.bt-col { background: var(--bt-col-bg); color: var(--bt-col-text); border-bottom-color: var(--bt-col-text); }
+
+/* ── Empty state ───────────────────────────────────────────────────────── */
+.empty { text-align: center; padding: 32px; color: var(--text-muted); font-size: 13px; }
+
+/* ── Weight banner ─────────────────────────────────────────────────────── */
+.weight-banner {
+    background: var(--bg-banner);
+    color: var(--text-banner);
+    padding: 10px 32px;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.weight-banner strong { color: var(--text-on-dark); }
+.weight-banner .match-score {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--color-pos);
+}
+
+/* ── BT Run Selector ──────────────────────────────────────────────────── */
+.bt-selector { display: flex; align-items: center; gap: 8px; }
+.bt-selector select { min-width: 250px; }
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .controls { padding: 12px 16px; }
+    .main { padding: 16px; }
+}
+
+/* ── Loading ───────────────────────────────────────────────────────────── */
+.loading { text-align: center; padding: 40px; color: var(--text-muted); }
+.spinner {
+    display: inline-block;
+    width: 20px; height: 20px;
+    border: 2px solid var(--spinner-track);
+    border-top-color: var(--spinner-head);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<div class="header">
+    <h1>DEXTER PRO <span>Strategy Analytics</span></h1>
+    <div class="header-right">
+        <div class="account">Account 9900897 &bull; Raw Trading Ltd &bull; USD</div>
+        <span class="theme-label" id="themeLabel">LIGHT</span>
+        <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode"></button>
+    </div>
+</div>
+
+<!-- ── Controls ─────────────────────────────────────────────────────────── -->
+<div class="controls">
+    <div class="symbol-pills">
+        <button class="symbol-pill active" data-symbol="XAUUSD">XAUUSD</button>
+        <button class="symbol-pill" data-symbol="BTCUSD">BTCUSD</button>
+        <button class="symbol-pill" data-symbol="ETHUSD">ETHUSD</button>
+        <button class="symbol-pill" data-symbol="ALL">ALL</button>
+    </div>
+    <div class="control-group">
+        <label>From</label>
+        <input type="date" id="dateFrom">
+    </div>
+    <div class="control-group">
+        <label>To</label>
+        <input type="date" id="dateTo">
+    </div>
+    <button class="btn btn-outline" onclick="loadData()">Refresh</button>
+    <div class="spacer"></div>
+    <div class="bt-selector">
+        <label style="font-size:11px;color:#64748b;font-weight:600">BT RUN</label>
+        <select id="btRunSelect" onchange="onBtRunChange()">
+            <option value="">Latest</option>
+        </select>
+    </div>
+    <button class="btn btn-primary" id="btnRunBT" onclick="runBacktest()">Run Backtest</button>
+    <span class="bt-status" id="btStatus"></span>
+</div>
+
+<!-- ── Weight Banner ───────────────────────────────────────────────────── -->
+<div class="weight-banner">
+    <div>Decision Weight: <strong>Real 70%</strong> / Backtest 30% — Real data always drives decisions</div>
+    <div>Accuracy Match: <span class="match-score" id="matchScore">—</span></div>
+</div>
+
+<!-- ── Main Content ────────────────────────────────────────────────────── -->
+<div class="main">
+
+<!-- Metric Cards -->
+<div class="cards" id="metricCards">
+    <div class="loading"><span class="spinner"></span>Loading data...</div>
+</div>
+
+<!-- Comparison Table -->
+<div class="grid-2">
+    <div class="section">
+        <div class="section-header">
+            <h2>Performance Comparison</h2>
+            <span class="badge badge-info">Real vs BT</span>
+        </div>
+        <div id="comparisonTable">
+            <div class="empty">No comparison data</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-header">
+            <h2>Session Analysis</h2>
+        </div>
+        <div id="sessionTable">
+            <div class="empty">No session data</div>
+        </div>
+    </div>
+</div>
+
+<!-- Family Breakdown -->
+<div class="section">
+    <div class="section-header">
+        <h2>Family Performance</h2>
+        <span class="badge badge-warn">Breakdown by Strategy</span>
+    </div>
+    <div id="familyTable">
+        <div class="empty">No family data</div>
+    </div>
+</div>
+
+<!-- Trade History -->
+<div class="section">
+    <div class="section-header">
+        <h2>Trade History</h2>
+        <span class="badge badge-info" id="tradeCount">0 trades</span>
+    </div>
+    <div id="tradeHistory" style="max-height: 500px; overflow-y: auto;">
+        <div class="empty">No trades</div>
+    </div>
+</div>
+
+<!-- Live Streaming Status -->
+<div class="section">
+    <div class="section-header">
+        <h2>Live Data Stream</h2>
+        <span id="streamBadge" class="status-badge" style="font-size:0.75rem;padding:2px 10px;border-radius:12px;margin-left:12px;">--</span>
+    </div>
+    <div id="streamPanel">
+        <div class="empty">Loading stream status...</div>
+    </div>
+</div>
+
+<!-- Development Pipeline -->
+<div class="section">
+    <div class="section-header">
+        <h2>Development Pipeline</h2>
+    </div>
+    <div id="pipelineTable">
+        <div class="empty">No pipeline data</div>
+    </div>
+</div>
+
+</div><!-- /.main -->
+
+<!-- ── JavaScript ──────────────────────────────────────────────────────── -->
+<script>
+const API = '';
+let currentSymbol = 'XAUUSD';
+let currentData = null;
+let pollTimer = null;
+
+// ── Theme ───────────────────────────────────────────────────────────────
+function initTheme() {
+    const saved = localStorage.getItem('dexter-theme') || 'light';
+    applyTheme(saved);
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    localStorage.setItem('dexter-theme', next);
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const toggle = document.getElementById('themeToggle');
+    const label = document.getElementById('themeLabel');
+    if (toggle) toggle.className = 'theme-toggle' + (theme === 'dark' ? ' dark' : '');
+    if (label) label.textContent = theme === 'dark' ? 'DARK' : 'LIGHT';
+}
+
+// Apply saved theme immediately (before DOMContentLoaded)
+initTheme();
+
+// ── Init ────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    // Set default dates: 7 days ago to today
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    document.getElementById('dateFrom').value = fmt_date(weekAgo);
+    document.getElementById('dateTo').value = fmt_date(today);
+
+    // Symbol pills
+    document.querySelectorAll('.symbol-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.symbol-pill').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentSymbol = btn.dataset.symbol;
+            loadData();
+        });
+    });
+
+    loadData();
+});
+
+function fmt_date(d) {
+    return d.toISOString().split('T')[0];
+}
+
+// ── API Calls ───────────────────────────────────────────────────────────
+async function loadData() {
+    const from = document.getElementById('dateFrom').value;
+    const to = document.getElementById('dateTo').value;
+    const url = `${API}/api/overview?symbol=${currentSymbol}&from=${from}&to=${to}T23:59:59Z`;
+
+    try {
+        const resp = await fetch(url);
+        const data = await resp.json();
+        currentData = data;
+        renderAll(data);
+    } catch (e) {
+        console.error('Load failed:', e);
+    }
+}
+
+function renderAll(data) {
+    renderCards(data);
+    renderComparison(data);
+    renderSessions(data);
+    renderFamilies(data);
+    renderTrades(data);
+    renderPipeline(data);
+    renderBtRuns(data);
+    renderMatchScore(data);
+    loadStreamStatus();
+}
+
+// ── Metric Cards ────────────────────────────────────────────────────────
+function renderCards(data) {
+    const r = data.real || {};
+    const bt = (data.bt && data.bt.report) || {};
+    const cards = document.getElementById('metricCards');
+
+    const items = [
+        { label: 'Total Trades', real: r.total_trades || 0, bt: bt.total_trades || 0, fmt: 'int' },
+        { label: 'Win Rate', real: r.win_rate || 0, bt: bt.win_rate || 0, fmt: 'pct' },
+        { label: 'Real PnL', real: r.total_pnl_usd || 0, bt: null, fmt: 'usd', single: true },
+        { label: 'Profit Factor', real: r.profit_factor || 0, bt: bt.profit_factor || 0, fmt: 'num' },
+        { label: 'Max Drawdown', real: r.max_drawdown_usd || 0, bt: bt.max_drawdown_r || 0, fmt: 'dd' },
+        { label: 'BT PnL (R)', real: null, bt: bt.total_pnl_r || 0, fmt: 'r', single: true },
+    ];
+
+    cards.innerHTML = items.map(item => {
+        const realVal = fmtVal(item.real, item.fmt);
+        const btVal = fmtVal(item.bt, item.fmt);
+        const realClass = valClass(item.real, item.fmt);
+        const btClass = valClass(item.bt, item.fmt);
+
+        if (item.single && item.bt === null) {
+            return `<div class="card">
+                <div class="card-label">${item.label}</div>
+                <div class="card-row"><span class="card-tag">REAL</span><span class="card-value ${realClass}">${realVal}</span></div>
+            </div>`;
+        }
+        if (item.single && item.real === null) {
+            return `<div class="card">
+                <div class="card-label">${item.label}</div>
+                <div class="card-row"><span class="card-tag">BT</span><span class="card-value ${btClass}">${btVal}</span></div>
+            </div>`;
+        }
+        return `<div class="card">
+            <div class="card-label">${item.label}</div>
+            <div class="card-row"><span class="card-tag">REAL</span><span class="card-value sm ${realClass}">${realVal}</span></div>
+            <div class="card-row"><span class="card-tag">BT</span><span class="card-value sm ${btClass}">${btVal}</span></div>
+        </div>`;
+    }).join('');
+}
+
+function fmtVal(v, fmt) {
+    if (v === null || v === undefined) return '—';
+    switch (fmt) {
+        case 'int': return Math.round(v).toLocaleString();
+        case 'pct': return v.toFixed(1) + '%';
+        case 'usd': return (v >= 0 ? '+' : '') + '$' + v.toFixed(2);
+        case 'r': return (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
+        case 'num': return v.toFixed(2);
+        case 'dd': return '-$' + Math.abs(v).toFixed(2);
+        default: return String(v);
+    }
+}
+
+function valClass(v, fmt) {
+    if (v === null || v === undefined) return 'neutral';
+    if (fmt === 'dd') return 'neg';
+    if (fmt === 'pct') return v >= 55 ? 'pos' : v >= 45 ? 'neutral' : 'neg';
+    if (v > 0) return 'pos';
+    if (v < 0) return 'neg';
+    return 'neutral';
+}
+
+// ── Comparison Table ────────────────────────────────────────────────────
+function renderComparison(data) {
+    const el = document.getElementById('comparisonTable');
+    const comp = data.comparison || {};
+    const metrics = comp.metrics || [];
+
+    if (!metrics.length) {
+        el.innerHTML = '<div class="empty">Run a backtest to see comparison</div>';
+        return;
+    }
+
+    let rows = metrics.map(m => {
+        const matchColor = m.status === 'good' ? '#10b981' : m.status === 'fair' ? '#f59e0b' : m.status === 'info' ? '#94a3b8' : '#ef4444';
+        const deltaClass = m.delta >= 0 ? 'pos' : 'neg';
+        const realFmt = typeof m.real === 'number' ? (m.fmt === 'int' ? Math.round(m.real) : m.real.toFixed(2)) : m.real;
+        const btFmt = typeof m.bt === 'number' ? (m.fmt === 'int' ? Math.round(m.bt) : m.bt.toFixed(2)) : m.bt;
+        const matchCell = m.match >= 0
+            ? `<span class="match-bar"><span class="fill" style="width:${m.match}%;background:${matchColor}"></span></span>
+               <span class="status status-${m.status}">${m.status.toUpperCase()}</span>`
+            : `<span class="muted" style="font-size:10px">different units</span>`;
+        return `<tr>
+            <td class="left bold">${m.name}</td>
+            <td class="bold">${realFmt}</td>
+            <td>${btFmt}</td>
+            <td class="${deltaClass}">${m.delta >= 0 ? '+' : ''}${m.delta.toFixed(2)}</td>
+            <td>${matchCell}</td>
+        </tr>`;
+    }).join('');
+
+    el.innerHTML = `<table class="comparison-table">
+        <thead><tr>
+            <th style="text-align:left">Metric</th>
+            <th class="real-col">Real</th>
+            <th class="bt-col">Backtest</th>
+            <th>Delta</th>
+            <th>Match</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Session Analysis ────────────────────────────────────────────────────
+function renderSessions(data) {
+    const el = document.getElementById('sessionTable');
+    const realSess = (data.real && data.real.by_session) || {};
+    const btSess = (data.bt && data.bt.report && data.bt.report.by_session) || {};
+
+    const sessions = ['asian', 'london', 'overlap', 'new_york', 'late_ny'];
+    const allEmpty = sessions.every(s => !realSess[s] && !btSess[s]);
+    if (allEmpty) {
+        el.innerHTML = '<div class="empty">No session data</div>';
+        return;
+    }
+
+    let rows = sessions.map(s => {
+        const r = realSess[s] || {};
+        const b = btSess[s] || {};
+        const rTrades = r.trades || 0;
+        const bTrades = b.trades || 0;
+        const rWR = r.win_rate || (rTrades > 0 ? ((r.wins||0)/rTrades*100).toFixed(1) : '—');
+        const bWR = b.win_rate || (bTrades > 0 ? ((b.wins||0)/bTrades*100).toFixed(1) : '—');
+        const rPnl = r.pnl || 0;
+        const bPnl = b.pnl_r || 0;
+
+        const best = rTrades > 0 && (typeof rWR === 'number' ? rWR : parseFloat(rWR)) >= 65;
+        return `<tr>
+            <td class="left bold">${s.replace('_', ' ').toUpperCase()}${best ? ' ★' : ''}</td>
+            <td>${rTrades > 0 ? `${r.wins||0}W ${r.losses||0}L` : '—'}</td>
+            <td class="${parseFloat(rWR) >= 55 ? 'pos' : parseFloat(rWR) < 45 ? 'neg' : ''}">${typeof rWR === 'number' ? rWR.toFixed(1)+'%' : rWR+'%'}</td>
+            <td>${bTrades > 0 ? `${b.wins||0}W ${(b.trades||0)-(b.wins||0)}L` : '—'}</td>
+            <td class="${parseFloat(bWR) >= 55 ? 'pos' : parseFloat(bWR) < 45 ? 'neg' : ''}">${typeof bWR === 'number' ? bWR.toFixed(1)+'%' : bWR+'%'}</td>
+            <td class="${rPnl >= 0 ? 'pos' : 'neg'}">${rPnl ? '$'+rPnl.toFixed(2) : '—'}</td>
+        </tr>`;
+    }).join('');
+
+    el.innerHTML = `<table>
+        <thead><tr>
+            <th style="text-align:left">Session</th>
+            <th>Real W/L</th>
+            <th class="real-col">Real WR</th>
+            <th>BT W/L</th>
+            <th class="bt-col">BT WR</th>
+            <th>Real PnL</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Family Performance ──────────────────────────────────────────────────
+function renderFamilies(data) {
+    const el = document.getElementById('familyTable');
+    const realFam = (data.real && data.real.by_family) || {};
+    const pipeline = data.pipeline || [];
+
+    if (!Object.keys(realFam).length && !pipeline.length) {
+        el.innerHTML = '<div class="empty">No family data</div>';
+        return;
+    }
+
+    // Merge pipeline metadata with real performance
+    const families = new Set([...Object.keys(realFam), ...pipeline.map(p => p.family)]);
+    let totalTrades = 0, totalWins = 0, totalPnl = 0;
+
+    let rows = Array.from(families).sort().map(fam => {
+        const r = realFam[fam] || {};
+        const meta = pipeline.find(p => p.family === fam) || {};
+        const status = meta.status || '—';
+        const statusClass = status === 'LIVE' ? 'status-live' : status === 'CANARY' ? 'status-canary' : 'status-probe';
+
+        const trades = r.trades || 0;
+        const wins = r.wins || 0;
+        const losses = r.losses || 0;
+        const wr = r.win_rate || 0;
+        const pnl = r.pnl || 0;
+        const risk = meta.risk_usd || '—';
+
+        totalTrades += trades;
+        totalWins += wins;
+        totalPnl += pnl;
+
+        const pnlClass = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
+        const wrClass = wr >= 55 ? 'pos' : wr < 45 ? 'neg' : '';
+
+        return `<tr>
+            <td class="left bold">${fam}</td>
+            <td><span class="status ${statusClass}">${status}</span></td>
+            <td>${typeof risk === 'number' ? '$'+risk.toFixed(2) : risk}</td>
+            <td>${trades || '—'}</td>
+            <td>${trades > 0 ? `${wins}W ${losses}L` : '—'}</td>
+            <td class="${wrClass}">${trades > 0 ? wr.toFixed(1)+'%' : '—'}</td>
+            <td class="${pnlClass} bold">${trades > 0 ? (pnl>=0?'+':'')+pnl.toFixed(2) : '—'}</td>
+        </tr>`;
+    }).join('');
+
+    // Totals row
+    const totalWR = totalTrades > 0 ? (totalWins/totalTrades*100).toFixed(1) : '0';
+    rows += `<tr class="totals-row">
+        <td class="left">TOTAL</td>
+        <td></td>
+        <td></td>
+        <td>${totalTrades}</td>
+        <td>${totalWins}W ${totalTrades-totalWins}L</td>
+        <td>${totalWR}%</td>
+        <td>${(totalPnl>=0?'+':'')}${totalPnl.toFixed(2)}</td>
+    </tr>`;
+
+    el.innerHTML = `<table>
+        <thead><tr>
+            <th style="text-align:left">Family</th>
+            <th>Status</th>
+            <th>Risk/Trade</th>
+            <th>Trades</th>
+            <th>W/L</th>
+            <th>Win Rate</th>
+            <th>PnL USD</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Trade History (cTrader style) ───────────────────────────────────────
+function renderTrades(data) {
+    const el = document.getElementById('tradeHistory');
+    const trades = data.trades || [];
+    document.getElementById('tradeCount').textContent = trades.length + ' deals';
+
+    if (!trades.length) {
+        el.innerHTML = '<div class="empty">No trades for this period</div>';
+        return;
+    }
+
+    let runningBalance = 0;
+    let totalPnl = 0;
+
+    // Calculate running balance (from oldest to newest for accuracy)
+    const sorted = [...trades].reverse();
+    const balances = [];
+    sorted.forEach(t => {
+        totalPnl += (t.pnl_usd || 0);
+    });
+
+    let rows = trades.map(t => {
+        const pnl = t.pnl_usd || 0;
+        const pnlClass = pnl > 0 ? 'pos bold' : pnl < 0 ? 'neg' : 'muted';
+        const dir = (t.direction || '').charAt(0).toUpperCase() + (t.direction || '').slice(1);
+        const time = (t.execution_utc || '').replace('T', ' ').replace('Z', '');
+        const source = t.source || '';
+        const family = source.split(':').slice(0, 2).join(':');
+
+        return `<tr>
+            <td>${t.symbol || ''}</td>
+            <td class="${t.direction === 'long' ? 'pos' : 'neg'}">${dir}</td>
+            <td>${time}</td>
+            <td>${t.execution_price ? t.execution_price.toFixed(2) : '—'}</td>
+            <td>${t.volume || ''}</td>
+            <td class="${pnlClass}">${pnl !== 0 ? (pnl>0?'+':'')+pnl.toFixed(2) : '—'}</td>
+            <td class="muted" style="font-size:11px">${family}</td>
+        </tr>`;
+    }).join('');
+
+    // Totals row
+    const pnlClass = totalPnl >= 0 ? 'pos' : 'neg';
+    rows += `<tr class="totals-row">
+        <td class="left">Totals</td>
+        <td></td><td></td><td></td><td></td>
+        <td>${(totalPnl>=0?'+':'')}${totalPnl.toFixed(2)}</td>
+        <td></td>
+    </tr>`;
+
+    el.innerHTML = `<table>
+        <thead><tr>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th>Time (UTC)</th>
+            <th>Price</th>
+            <th>Volume</th>
+            <th>Net USD</th>
+            <th>Source</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Pipeline ────────────────────────────────────────────────────────────
+function renderPipeline(data) {
+    const el = document.getElementById('pipelineTable');
+    const pipeline = data.pipeline || [];
+
+    if (!pipeline.length) {
+        el.innerHTML = '<div class="empty">No pipeline data</div>';
+        return;
+    }
+
+    let rows = pipeline.map(p => {
+        const statusClass = p.status === 'LIVE' ? 'status-live' : p.status === 'CANARY' ? 'status-canary' : 'status-probe';
+        return `<tr>
+            <td class="left bold">${p.family}</td>
+            <td>${p.full_name}</td>
+            <td>${p.symbol}</td>
+            <td><span class="status ${statusClass}">${p.status}</span></td>
+            <td>$${p.risk_usd.toFixed(2)}</td>
+        </tr>`;
+    }).join('');
+
+    el.innerHTML = `<table>
+        <thead><tr>
+            <th style="text-align:left">Family</th>
+            <th>Full Name</th>
+            <th>Symbol</th>
+            <th>Status</th>
+            <th>Risk/Trade</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── Live Stream Status ──────────────────────────────────────────────────
+async function loadStreamStatus() {
+    const panel = document.getElementById('streamPanel');
+    const badge = document.getElementById('streamBadge');
+    try {
+        const resp = await fetch(`${API}/api/stream/status`);
+        const data = await resp.json();
+        renderStreamPanel(data, panel, badge);
+    } catch (e) {
+        badge.textContent = 'ERROR';
+        badge.style.background = 'var(--status-loss-bg, #fecaca)';
+        badge.style.color = 'var(--status-loss-fg, #991b1b)';
+        panel.innerHTML = '<div class="empty">Cannot reach stream API</div>';
+    }
+}
+
+function renderStreamPanel(data, panel, badge) {
+    const s = data.stream || {};
+    const connected = s.connected && !s.stale;
+
+    badge.textContent = connected ? 'CONNECTED' : (s.running ? 'RECONNECTING' : 'OFFLINE');
+    badge.style.background = connected ? 'var(--status-win-bg, #bbf7d0)' : 'var(--status-loss-bg, #fecaca)';
+    badge.style.color = connected ? 'var(--status-win-fg, #166534)' : 'var(--status-loss-fg, #991b1b)';
+
+    // Metrics row
+    const uptime = s.uptime_sec ? formatDuration(s.uptime_sec) : '--';
+    const bars = s.total_bars_received || 0;
+    const marginEvts = s.total_margin_events || 0;
+    const execEvts = s.total_execution_events || 0;
+    const reconnects = s.reconnect_count || 0;
+    const subs = s.subscribed_symbols || '--';
+    const tfs = s.subscribed_tfs || '--';
+    const lastHB = s.last_heartbeat ? timeAgo(s.last_heartbeat) : '--';
+
+    let html = `<div class="metric-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px;">
+        <div class="metric-card" style="padding:10px">
+            <div class="metric-value">${uptime}</div>
+            <div class="metric-label">Uptime</div>
+        </div>
+        <div class="metric-card" style="padding:10px">
+            <div class="metric-value">${bars}</div>
+            <div class="metric-label">Bars Received</div>
+        </div>
+        <div class="metric-card" style="padding:10px">
+            <div class="metric-value">${execEvts}</div>
+            <div class="metric-label">Exec Events</div>
+        </div>
+        <div class="metric-card" style="padding:10px">
+            <div class="metric-value">${marginEvts}</div>
+            <div class="metric-label">Margin Events</div>
+        </div>
+        <div class="metric-card" style="padding:10px">
+            <div class="metric-value">${reconnects}</div>
+            <div class="metric-label">Reconnects</div>
+        </div>
+        <div class="metric-card" style="padding:10px">
+            <div class="metric-value">${lastHB}</div>
+            <div class="metric-label">Last Heartbeat</div>
+        </div>
+    </div>`;
+
+    // Data freshness table
+    const fresh = data.freshness || {};
+    const keys = Object.keys(fresh);
+    if (keys.length) {
+        let fRows = keys.map(k => {
+            const f = fresh[k];
+            const age = f.age_sec;
+            const ageStr = age >= 0 ? formatDuration(age) : '--';
+            const cls = age >= 0 && age < 120 ? 'style="color:var(--status-win-fg,#166534)"' : (age > 600 ? 'style="color:var(--status-loss-fg,#991b1b)"' : '');
+            return `<tr>
+                <td class="left bold">${f.symbol}</td>
+                <td>${f.tf}</td>
+                <td>${f.total_bars}</td>
+                <td ${cls}>${ageStr}</td>
+                <td>${f.latest_utc || '--'}</td>
+            </tr>`;
+        }).join('');
+        html += `<table>
+            <thead><tr>
+                <th style="text-align:left">Symbol</th>
+                <th>TF</th>
+                <th>Bars</th>
+                <th>Age</th>
+                <th>Latest Bar</th>
+            </tr></thead>
+            <tbody>${fRows}</tbody>
+        </table>`;
+    }
+
+    // Margin status
+    const m = data.margin || {};
+    if (m.has_data && m.last_trigger) {
+        html += `<div style="margin-top:8px;padding:8px;border-radius:6px;background:var(--status-loss-bg,#fecaca);color:var(--status-loss-fg,#991b1b);font-weight:600;">
+            Margin Call: ${m.last_trigger.margin_call_type || 'triggered'} at ${m.last_trigger.received_at || '--'}
+        </div>`;
+    }
+
+    // Error message
+    if (s.error_message && !connected) {
+        html += `<div style="margin-top:8px;color:var(--text-muted,#6b7280);font-size:0.85rem;">
+            ${s.error_message}
+        </div>`;
+    }
+
+    if (!html.trim()) {
+        html = '<div class="empty">Stream service not running. Start with: python -m execution.ctrader_stream</div>';
+    }
+
+    panel.innerHTML = html;
+}
+
+function formatDuration(sec) {
+    if (sec < 60) return Math.round(sec) + 's';
+    if (sec < 3600) return Math.floor(sec/60) + 'm ' + Math.round(sec%60) + 's';
+    const h = Math.floor(sec/3600);
+    const m = Math.floor((sec%3600)/60);
+    return h + 'h ' + m + 'm';
+}
+
+function timeAgo(utcStr) {
+    try {
+        const dt = new Date(utcStr);
+        const ago = (Date.now() - dt.getTime()) / 1000;
+        return formatDuration(ago) + ' ago';
+    } catch(e) { return utcStr; }
+}
+
+// ── BT Run Selector ─────────────────────────────────────────────────────
+function renderBtRuns(data) {
+    const sel = document.getElementById('btRunSelect');
+    const runs = data.bt_runs || [];
+
+    sel.innerHTML = '<option value="">Latest</option>';
+    runs.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = `#${r.id} ${r.run_name} (${r.total_trades}T, ${r.win_rate}% WR)`;
+        sel.appendChild(opt);
+    });
+}
+
+async function onBtRunChange() {
+    const runId = document.getElementById('btRunSelect').value;
+    if (!runId) {
+        loadData();
+        return;
+    }
+
+    try {
+        const resp = await fetch(`${API}/api/bt/report/${runId}`);
+        const report = await resp.json();
+        if (currentData) {
+            currentData.bt.report = report;
+            currentData.comparison = computeLocalComparison(currentData.real, report);
+            renderAll(currentData);
+        }
+    } catch (e) {
+        console.error('BT report load failed:', e);
+    }
+}
+
+function computeLocalComparison(realStats, btReport) {
+    if (!realStats || !btReport || !realStats.total_trades || !btReport.total_trades) {
+        return { match_pct: 0, metrics: [], verdict: 'Insufficient data' };
+    }
+
+    const metrics = [];
+    function add(name, rv, bv) {
+        if (rv == null || bv == null) return;
+        const delta = bv - rv;
+        const denom = Math.max(Math.abs(rv), 0.01);
+        const match = Math.round((1 - Math.min(Math.abs(delta)/denom, 1)) * 100);
+        const status = match >= 70 ? 'good' : match >= 40 ? 'fair' : 'poor';
+        metrics.push({ name, real: rv, bt: bv, delta: Math.round(delta*100)/100, match, status });
+    }
+
+    add('Win Rate %', realStats.win_rate, btReport.win_rate);
+    add('Profit Factor', realStats.profit_factor, btReport.profit_factor);
+    add('Avg Winner', realStats.avg_winner_usd, btReport.avg_winner_r);
+    add('Avg Loser', realStats.avg_loser_usd, btReport.avg_loser_r);
+
+    const avg = metrics.length ? Math.round(metrics.reduce((s,m) => s + m.match, 0) / metrics.length) : 0;
+    return {
+        match_pct: avg,
+        metrics,
+        verdict: avg >= 75 ? 'BT closely matches Real' : avg >= 50 ? 'BT partially matches Real' : 'BT diverges from Real',
+    };
+}
+
+// ── Match Score ─────────────────────────────────────────────────────────
+function renderMatchScore(data) {
+    const el = document.getElementById('matchScore');
+    const comp = data.comparison || {};
+    const pct = comp.match_pct || 0;
+    el.textContent = pct > 0 ? pct + '%' : '—';
+    el.style.color = pct >= 70 ? '#10b981' : pct >= 40 ? '#f59e0b' : pct > 0 ? '#ef4444' : '#94a3b8';
+}
+
+// ── Run Backtest ────────────────────────────────────────────────────────
+async function runBacktest() {
+    const btn = document.getElementById('btnRunBT');
+    const statusEl = document.getElementById('btStatus');
+
+    btn.disabled = true;
+    statusEl.className = 'bt-status running';
+    statusEl.textContent = 'Starting...';
+
+    const from = document.getElementById('dateFrom').value;
+    const to = document.getElementById('dateTo').value;
+    const daysDiff = Math.ceil((new Date(to) - new Date(from)) / (1000*60*60*24));
+
+    try {
+        const resp = await fetch(`${API}/api/bt/run`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                symbol: currentSymbol === 'ALL' ? 'XAUUSD' : currentSymbol,
+                days: daysDiff || 5,
+                from: from,
+                to: to,
+                source: 'ctrader',
+            }),
+        });
+
+        if (resp.status === 409) {
+            statusEl.textContent = 'Already running';
+            btn.disabled = false;
+            return;
+        }
+
+        // Poll for progress
+        pollTimer = setInterval(async () => {
+            try {
+                const pr = await fetch(`${API}/api/bt/progress`);
+                const progress = await pr.json();
+                statusEl.textContent = progress.progress || progress.status;
+
+                if (progress.status === 'done' || progress.status === 'error') {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                    btn.disabled = false;
+                    statusEl.className = 'bt-status ' + progress.status;
+                    if (progress.status === 'done') {
+                        statusEl.textContent = 'Complete — refreshing...';
+                        setTimeout(() => loadData(), 1000);
+                    }
+                }
+            } catch (e) {
+                // ignore poll errors
+            }
+        }, 2000);
+
+    } catch (e) {
+        statusEl.textContent = 'Failed: ' + e.message;
+        statusEl.className = 'bt-status';
+        btn.disabled = false;
+    }
+}
+</script>
+</body>
+</html>

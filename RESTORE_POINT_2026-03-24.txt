@@ -1,0 +1,72 @@
+RESTORE POINT — 2026-03-24 01:36 ICT (UTC+7)
+==============================================
+
+Created BEFORE: Deep Data Architecture phase (TickBarEngine, MRD, OFAS, LWEE families)
+
+PERFORMANCE (last confirmed live period):
+  Period:         2026-03-20 to 2026-03-24 00:43 ICT
+  Realized P&L:   +148.65 USD
+  Ending balance: 896.24 USD
+  Win rate:       ~57% (24W / 18L across 42 closed trades)
+  Payoff ratio:   ~2.09:1 (avg winner $9.56, avg loser $4.58)
+  Trade sources:  XAUUSD (29 trades), BTCUSD (10), ETHUSD (3)
+  Lot size:       0.01 lots (uniform canary sizing)
+  Lane:           canary only (winner lane = evaluated but filtered)
+
+ACTIVE FAMILIES ON ORACLE VM:
+  - RR  (xau_scalp_range_repair)           — best performing, +$45.50 on Mar 23
+  - TDF (xau_scalp_tick_depth_filter)      — concurrent with FSS
+  - FSS (xau_scalp_flow_short_sidecar)     — fixed 2026-03-20
+  - MFU (xau_scalp_microtrend_follow_up)   — active
+  - SCHED (xauusd_scheduled)               — behavioral H1 scanner
+  - BTC canary (btc_weekday_lob_momentum)
+  - ETH canary (eth_weekday_overlap_probe)
+
+FIXES ALREADY DEPLOYED (from backtester-xauusd branch):
+  1. FSS fixes (3 total): MTF guard on FSS, canary BE safety net, config key corrections
+  2. SCHED canary MTF guard (last commit: c15e0e5)
+  3. Strategy lab force recovery families (canary deadlock breaker)
+
+CURRENT BRANCH: backtester-xauusd
+LAST COMMIT:    c15e0e5 — fix: scheduled canary MTF guard + canary family BE safety net
+
+KNOWN ISSUES (NOT YET FIXED — targeted in next phase):
+  1. Recovery regime blindness — 3 losing XAU shorts during Mar 23 recovery = -$52.11
+  2. SCHED LONG at 07:34 Mar 23 with conf=0.0 — needs investigation
+  3. TP size too tight on high-vol days (ATR cap not scaling with D1 range)
+  4. ETH lot sizing anomaly (0.03 lots on one Mar 21 trade — unknown origin)
+
+KNOWN GOOD CONFIG KEYS (do not change without backtest):
+  SCALPING_XAU_FORCE_TP1_RR = 0.55
+  SCALPING_XAU_FORCE_TP2_RR = 0.90
+  SCALPING_XAU_FORCE_TP3_RR = 1.25
+  SCALPING_XAU_TP1_RR       = 0.9
+  SCALPING_XAU_TP2_RR       = 1.35
+  SCALPING_XAU_TP2_MAX_ATR   = 1.8
+  SCALPING_XAU_TP3_MAX_ATR   = 2.6
+  SCALPING_XAU_SL_MAX_ATR    = 1.25
+  XAU_COUNTERTREND_LONG_REQUIRE_CONFIRMED = True
+  SCALP_XAU_DIRECT_MTF_STRICT_ENABLED     = True
+
+ORACLE VM STATUS at time of snapshot:
+  VM running on: backtester-xauusd branch
+  PID last known: 62973 (check via: ps aux | grep main.py)
+  CTRADER_DRY_RUN: 0 (live mode)
+  PC local testing: CTRADER_DRY_RUN=1 (safe)
+
+DATABASE SNAPSHOTS:
+  ctrader_openapi.db — backed up separately
+  ctrader_spot_ticks:    374,948 rows (raw tick data)
+  ctrader_depth_quotes:  3,495,893 rows (L2 order book data)
+  execution_journal:     2,005 rows (all signal dispatch history)
+  ctrader_deals:         2,935 rows (all closed P&L records)
+
+TO RESTORE THIS EXACT STATE:
+  git checkout v3-fixed-profitable-20260324
+  # OR unzip: dexter_pro_v3_fixed__backup__20260324.zip
+
+NEXT PHASE (do NOT start without confirm from DEXTER PRIME):
+  Phase 1: Gate 0 — tick density check (check_tick_coverage.py)
+  Phase 2: Gate 1 — build market/tick_bar_engine.py
+  Phase 3: Gate 2 — MRD offline validation on Mar 20-24 dataset
+  Phase 4: Gate 3-5 — live canary log-only → shadow → full suppression

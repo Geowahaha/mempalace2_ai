@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Bridge"
+  short_description: "Control Dexter Pro via local OpenClaw bridge"
+  default_prompt: "Use $openclaw to check Dexter Pro status, positions, signals, or autopilot actions."

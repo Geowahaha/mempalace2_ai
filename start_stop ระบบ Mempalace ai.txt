@@ -1,0 +1,53 @@
+ถ้าปิดเครื่อง PC นี้ ระบบ Mempalace ที่กำลังรันอยู่จะหยุดครับ และตอนเปิดเครื่องใหม่มันจะไม่กลับมารันเองอัตโนมัติใน setup ปัจจุบัน เพราะตอนนี้เราเปิดด้วย PowerShell process ไม่ใช่ Windows Service หรือ Scheduled Task
+
+สิ่งที่จะยังอยู่หลังเปิดเครื่องใหม่:
+
+โค้ดใน D:\Mempalac_AI
+.env local config
+memory/database ใน data/
+logs เดิม
+model Ollama ที่ pull แล้ว เช่น qwen2.5:1.5b
+สิ่งที่ต้องเปิดใหม่:
+
+Ollama background server
+Mempalace API
+Mempalace trading loop
+คำสั่งเปิด Mempalace trading system:
+
+cd D:\Mempalac_AI
+.\scripts\start-demo-live-stack.ps1 -Interval 30
+คำสั่งเช็คสถานะ:
+
+cd D:\Mempalac_AI
+.\scripts\check-status.ps1
+หรือเปิด dashboard:
+
+http://127.0.0.1:8091/dashboard
+คำสั่งดู log:
+
+cd D:\Mempalac_AI
+.\scripts\tail-logs.ps1
+คำสั่งปิด Mempalace อย่างปลอดภัย โดยไม่แตะ Dexter และไม่ปิด Ollama:
+
+cd D:\Mempalac_AI
+.\scripts\stop-demo-live-stack.ps1
+ถ้าต้องการปิดเฉพาะ trading loop แต่คง API/dashboard ไว้:
+
+cd D:\Mempalac_AI
+.\scripts\stop-demo-live-stack.ps1 -KeepApi
+Ollama ที่คุณ test ด้วย Invoke-RestMethod http://127.0.0.1:11434/api/tags ใช้งานได้แล้ว แปลว่า local LLM server พร้อมใช้. ปิดหน้าต่าง Ollama App ได้ แต่ห้าม quit/kill ollama.exe serve ถ้าต้องการให้ Mempalace ใช้ local model ต่อ.
+
+Invoke-RestMethod http://127.0.0.1:11434/api/tags
+ถ้ามีรายชื่อ model แปลว่า Ollama background ยังใช้ได้. ตอนนี้ผมตรวจแล้ว API ใช้งานได้ และ qwen2.5:1.5b loaded อยู่.
+
+ผมเพิ่ม stop script แล้ว commit/push ไป GitHub แล้ว:
+
+aa3750f Add safe Mempalac stop script
+Mempalace ตอนนี้ยังรันอยู่หลัง commit/push:
+
+API PID 13072
+trading loop PID 6900
+DRY_RUN=false
+LIVE_EXECUTION_ENABLED=true
+
+6:18 PM

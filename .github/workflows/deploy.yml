@@ -1,0 +1,90 @@
+name: Deploy to Oracle VM
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        with:
+          host: 129.150.36.17
+          username: ubuntu
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          envs: GH_PAT
+          script: |
+            set -euo pipefail
+            APP_DIR="/opt/dexter_pro"
+            REPO_URL="https://${GH_PAT}@github.com/Geowahaha/Oracle_Ctrader_Geomonkey.git"
+
+            # Set git credentials so pip can clone from GitHub
+            git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
+
+            # First-time setup: create dir, clone repo, create venv
+            if [ ! -d "$APP_DIR/.git" ]; then
+              sudo rm -rf "$APP_DIR"
+              echo "=== First-time setup ==="
+              sudo apt-get update -y
+              sudo apt-get install -y python3-venv python3-pip build-essential
+              sudo mkdir -p "$APP_DIR"
+              sudo chown ubuntu:ubuntu "$APP_DIR"
+              git clone --branch main "$REPO_URL" "$APP_DIR"
+              cd "$APP_DIR"
+              git remote set-url origin "$REPO_URL"
+              python3 -m venv .venv
+              . .venv/bin/activate
+              pip install --upgrade pip wheel
+              pip install -r requirements.txt
+              echo "=== First-time setup complete ==="
+              echo "NOTE: Edit /opt/dexter_pro/.env.local with API keys, then run:"
+              echo "  sudo systemctl start dexter-monitor"
+              exit 0
+            fi
+
+            echo "=== Pulling latest code ==="
+            cd "$APP_DIR"
+            git remote set-url origin "$REPO_URL"
+            git fetch --all --prune
+            git checkout main
+            git pull --ff-only
+
+            # Create venv if missing or broken
+            if [ ! -f "$APP_DIR/.venv/bin/activate" ]; then
+              echo "=== Creating venv ==="
+              rm -rf "$APP_DIR/.venv"
+              sudo apt-get update -y
+              sudo apt-get install -y python3-venv python3-pip build-essential
+              python3 -m venv .venv
+              . .venv/bin/activate
+              pip install --upgrade pip wheel
+              pip install -r requirements.txt
+            fi
+
+            echo "=== Installing dependencies ==="
+            . .venv/bin/activate
+            pip install -q --upgrade pip
+            pip install -q -r requirements.txt
+
+            echo "=== Restarting service ==="
+            if sudo systemctl is-enabled dexter-monitor 2>/dev/null; then
+              sudo systemctl restart dexter-monitor
+              sleep 5
+              STATUS=$(sudo systemctl is-active dexter-monitor || true)
+              echo "Service status: $STATUS"
+              if [ "$STATUS" = "active" ] || [ "$STATUS" = "activating" ]; then
+                echo "Deploy complete — service running!"
+              else
+                echo "WARNING: service status is $STATUS — check logs with: sudo journalctl -u dexter-monitor -n 50"
+              fi
+            else
+              echo "Deploy complete — service not yet configured (run oracle_always_free_setup.sh)"
+            fi

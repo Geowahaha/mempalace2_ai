@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mempalace-trader"
+version = "0.1.0"
+description = "Autonomous cTrader-focused trading engine with MemPalace-inspired memory."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.6.0",
+  "pydantic-settings>=2.2.0",
+  "openai>=1.40.0",
+  "chromadb>=0.4.24",
+  "tenacity>=8.2.0",
+  "httpx>=0.27.0",
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.29.0",
+]
+
+[project.scripts]
+mempalace-trader-loop = "trading_ai.main:main"
+mempalace-trader-api = "trading_ai.api:main"
+mempalace-trader-daily-analyst = "trading_ai.daily_analyst:main"
+mempalace-trader-selftest-memory = "trading_ai.selftest_memory:main"
+mempalace-dexter-edge-audit = "trading_ai.dexter_edge_audit:main"
+
+[tool.setuptools.packages.find]
+include = ["trading_ai*"]
