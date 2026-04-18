@@ -122,6 +122,33 @@ python ops/tencent_model_tournament.py --symbol BTCUSD --rounds 4 --include-self
 sudo systemctl restart mempalace-trader
 ```
 
+## 5.2) Hermes Autotune timer (no manual command loop)
+
+Install a scheduled cycle that runs tournament + applies winner + restarts trader:
+
+```bash
+cd /opt/mempalace_ai
+sudo APP_DIR=/opt/mempalace_ai \
+     SERVICE_NAME=mempalace-trader \
+     SYMBOL=BTCUSD \
+     ROUNDS=3 \
+     ON_CALENDAR="*-*-* 00,06,12,18:08:00" \
+     bash ops/install_tencent_hermes_timer.sh
+```
+
+Run one cycle immediately:
+
+```bash
+sudo systemctl start mempalace-hermes-autotune.service
+sudo journalctl -u mempalace-hermes-autotune.service -n 120 --no-pager
+```
+
+Check next schedule:
+
+```bash
+systemctl list-timers --all | grep mempalace-hermes-autotune
+```
+
 ## 6) Continuous deployment
 
 After secrets are configured, every push to `main` triggers deploy and service restart automatically.

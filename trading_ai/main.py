@@ -183,11 +183,15 @@ def _build_local_chain(
         for model in selected_models
     ]
     log.info("%s failover chain: %s", label_prefix.upper(), [label for label, _ in providers])
-    return FailoverProvider(
-        providers,
-        name=failover_name,
-        failure_threshold=failure_threshold,
-        cooldown_sec=cooldown_sec,
+    return (
+        FailoverProvider(
+            providers,
+            name=failover_name,
+            failure_threshold=failure_threshold,
+            cooldown_sec=cooldown_sec,
+        )
+        if len(providers) > 1
+        else providers[0][1]
     )
 
 
