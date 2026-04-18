@@ -82,6 +82,25 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(settings.llm_failover_cooldown_sec, 45.0)
             self.assertEqual(settings.llm_failover_runtime_path.name, "tencent_failover_runtime.json")
 
+    def test_performance_stage_debug_thresholds_accept_low_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = Path(tmp) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "PERFORMANCE_STAGE_WARN_MS=1",
+                        "PERFORMANCE_CYCLE_WARN_MS=1",
+                        "PERFORMANCE_STAGE_LOG_EVERY_CYCLE=true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            settings = Settings(_env_file=(str(env_path),))
+            self.assertEqual(settings.performance_stage_warn_ms, 1.0)
+            self.assertEqual(settings.performance_cycle_warn_ms, 1.0)
+            self.assertTrue(settings.performance_stage_log_every_cycle)
+
 
 if __name__ == "__main__":
     unittest.main()

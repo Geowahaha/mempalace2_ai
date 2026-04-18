@@ -222,6 +222,8 @@ class MemoryEngine:
         self._score_weight = max(0.0, min(1.0, score_weight))
         self._collection = None
         self._client = None
+        self._normalized_rows_cache: Optional[List[Dict[str, Any]]] = None
+        self._normalized_rows_cache_count: int = -1
         self._init_chroma()
 
     def _init_chroma(self) -> None:
@@ -321,6 +323,8 @@ class MemoryEngine:
 
     def _add_document(self, *, doc_id: str, document: str, metadata: Dict[str, Any]) -> str:
         self._collection.add(ids=[doc_id], documents=[document], metadatas=[metadata])
+        self._normalized_rows_cache = None
+        self._normalized_rows_cache_count = -1
         return doc_id
 
     def store_memory(self, record: MemoryRecord, *, extra_metadata: Optional[Dict[str, Any]] = None) -> str:
@@ -360,8 +364,9 @@ class MemoryEngine:
         *,
         top_k: int,
         where: Optional[Dict[str, Any]],
+        total_count: Optional[int] = None,
     ) -> List[RecallHit]:
-        total = self._collection.count()
+        total = int(total_count) if total_count is not None else int(self._collection.count())
         if total == 0:
             return []
         n_fetch = min(max(top_k * 3, top_k), total)
@@ -469,11 +474,19 @@ class MemoryEngine:
             trade_cond,
         ]
 
+        total = int(self._collection.count())
+        if total <= 0:
+            return []
         seen_ids: set[str] = set()
         merged: List[RecallHit] = []
         for w in strategies:
             try:
-                hits = self._query_weighted(query, top_k=top_k, where=w)
+                hits = self._query_weighted(
+                    query,
+                    top_k=top_k,
+                    where=w,
+                    total_count=total,
+                )
             except Exception:
                 continue
             for h in hits:
@@ -535,6 +548,17 @@ class MemoryEngine:
         return out[: max(1, min(int(limit), 500))]
 
     def _normalized_rows(self) -> List[Dict[str, Any]]:
+        try:
+            current_count = int(self._collection.count())
+        except Exception:
+            current_count = -1
+        if (
+            self._normalized_rows_cache is not None
+            and current_count >= 0
+            and current_count == self._normalized_rows_cache_count
+        ):
+            return list(self._normalized_rows_cache)
+
         rows: List[Dict[str, Any]] = []
         for item in self.list_all_structured_experiences():
             meta = dict(item.get("metadata") or {})
@@ -589,6 +613,8 @@ class MemoryEngine:
                     "tags": list(body.get("tags") or []),
                 }
             )
+        self._normalized_rows_cache = list(rows)
+        self._normalized_rows_cache_count = current_count
         return rows
 
     def build_wake_up_context(

@@ -649,6 +649,35 @@ def _should_store_execution_failure_note(trade_message: str, raw_response: Optio
     return True
 
 
+def _mark_stage_timing(stage_ms: Dict[str, float], name: str, started_at: float) -> None:
+    stage_ms[str(name)] = round((time.perf_counter() - float(started_at)) * 1000.0, 3)
+
+
+def _log_stage_timing(settings: Settings, stage_ms: Dict[str, float]) -> None:
+    if not bool(settings.performance_stage_telemetry_enabled):
+        return
+    if not stage_ms:
+        return
+    always_log = bool(getattr(settings, "performance_stage_log_every_cycle", False))
+    cycle_ms = float(stage_ms.get("cycle_total_ms") or 0.0)
+    stage_warn_ms = float(settings.performance_stage_warn_ms)
+    cycle_warn_ms = float(settings.performance_cycle_warn_ms)
+    slow_parts = [
+        f"{name}={value:.1f}"
+        for name, value in stage_ms.items()
+        if name != "cycle_total_ms" and float(value) >= stage_warn_ms
+    ]
+    if cycle_ms < cycle_warn_ms and not slow_parts and not always_log:
+        return
+    parts = ", ".join(f"{k}={float(v):.1f}" for k, v in stage_ms.items())
+    log_fn = log.warning if (cycle_ms >= cycle_warn_ms or slow_parts) else log.info
+    log_fn(
+        "Performance stages: %s%s",
+        parts,
+        f" | slow={'; '.join(slow_parts)}" if slow_parts else "",
+    )
+
+
 def _apply_skill_feedback(
     decision: Decision,
     *,
@@ -1790,12 +1819,16 @@ async def learning_loop(settings: Settings) -> None:
 
     while True:
         try:
+            cycle_started_at = time.perf_counter()
+            stage_ms: Dict[str, float] = {}
             if risk.halted:
                 log.error("Stopped: %s", risk.halt_reason)
                 await asyncio.sleep(settings.loop_interval_sec)
                 continue
 
+            stage_started_at = time.perf_counter()
             await refresh_weekly_lane_profile()
+            _mark_stage_timing(stage_ms, "weekly_lane_refresh_ms", stage_started_at)
 
             if (
                 settings.strategy_evolution_v2_enabled
@@ -1806,7 +1839,9 @@ async def learning_loop(settings: Settings) -> None:
             if correlation is not None:
                 correlation.start_cycle()
 
+            stage_started_at = time.perf_counter()
             market = await execution.get_market_data(settings.symbol)
+            _mark_stage_timing(stage_ms, "market_data_ms", stage_started_at)
             price_history.append(float(market.mid))
             if len(price_history) > settings.price_history_max:
                 price_history = price_history[-settings.price_history_max :]
@@ -1814,11 +1849,13 @@ async def learning_loop(settings: Settings) -> None:
             md: Dict[str, Any] = {**market.as_prompt_dict(), "price_history": list(price_history)}
             features = extract_features(md)
 
+            stage_started_at = time.perf_counter()
             similar = memory.recall_similar_trades(
                 features,
                 symbol=settings.symbol,
                 top_k=settings.similar_trades_top_k,
             )
+            _mark_stage_timing(stage_ms, "memory_recall_ms", stage_started_at)
 
             risk_state = {
                 "can_trade": risk.can_trade(),
@@ -1875,6 +1912,7 @@ async def learning_loop(settings: Settings) -> None:
                     "lane_stage": anticipated_stats.lane_stage,
                     "pending_recommendation": anticipated_stats.pending_recommendation,
                 }
+            stage_started_at = time.perf_counter()
             skill_matches = skillbook.recall(
                 symbol=settings.symbol,
                 session=str(features.get("session") or ""),
@@ -1908,6 +1946,7 @@ async def learning_loop(settings: Settings) -> None:
                 strategy_state=anticipated_state,
                 pattern_analysis=pattern_analysis,
             )
+            _mark_stage_timing(stage_ms, "skill_context_ms", stage_started_at)
 
             if settings.position_manager_enabled and execution.positions_for(settings.symbol):
                 managed_positions = execution.positions_for(settings.symbol)
@@ -2010,6 +2049,7 @@ async def learning_loop(settings: Settings) -> None:
                             close_reason,
                         )
 
+            stage_started_at = time.perf_counter()
             probe_candidate_decision: Optional[Decision] = None
             probe_candidate_bucket = ""
             probe_candidate_reason = ""
@@ -2034,7 +2074,46 @@ async def learning_loop(settings: Settings) -> None:
                     reason=f"pre_llm_hard_filter:{pre_llm_veto}",
                     raw={"pre_llm_hard_filter": pre_llm_veto},
                 )
-                if settings.shadow_probe_enabled and str(pre_llm_veto).startswith("loss_streak_"):
+                entry_override = evaluate_entry_hold_override(
+                    anticipated_action=anticipated_action,
+                    anticipated_assessment=anticipated_assessment,
+                    decision_action=decision.action,
+                    decision_reason=decision.reason,
+                    matches=skill_matches,
+                    risk_state=risk_state,
+                    room_guard=anticipated_room_guard,
+                    settings=settings,
+                )
+                if entry_override.get("eligible"):
+                    override_confidence = float(entry_override.get("confidence") or settings.entry_override_confidence)
+                    override_reason = (
+                        "hard_filter_override:"
+                        f"{pre_llm_veto}:"
+                        f"opp={float(entry_override.get('opportunity_score') or 0.0):.3f}:"
+                        f"risk={float(entry_override.get('risk_score') or 0.0):.3f}:"
+                        f"edge={float(entry_override.get('edge_score') or 0.0):.3f}|"
+                        f"{decision.reason}"
+                    )
+                    decision = Decision(
+                        action=anticipated_action,
+                        confidence=override_confidence,
+                        reason=override_reason,
+                        raw={**dict(decision.raw), "entry_override": dict(entry_override)},
+                    )
+                    log.info(
+                        "Hard-filter override promoted HOLD -> %s conf=%.3f filter=%s opp=%.3f risk=%.3f edge=%.3f",
+                        decision.action,
+                        decision.confidence,
+                        str(pre_llm_veto),
+                        float(entry_override.get("opportunity_score") or 0.0),
+                        float(entry_override.get("risk_score") or 0.0),
+                        float(entry_override.get("edge_score") or 0.0),
+                    )
+                if (
+                    decision.action == "HOLD"
+                    and settings.shadow_probe_enabled
+                    and str(pre_llm_veto).startswith("loss_streak_")
+                ):
                     probe_candidate_decision = agent._heuristic_fallback_decision(
                         similar_trades=similar,
                         features=features,
@@ -2114,6 +2193,7 @@ async def learning_loop(settings: Settings) -> None:
                         float(entry_override.get("risk_score") or 0.0),
                         float(entry_override.get("edge_score") or 0.0),
                     )
+            _mark_stage_timing(stage_ms, "decision_stack_ms", stage_started_at)
             if settings.performance_monitor_enabled:
                 perf_mon.update_on_signal(decision)
 
@@ -2628,6 +2708,7 @@ async def learning_loop(settings: Settings) -> None:
                 features=features,
                 strategy_key=anticipated_strategy_key,
             )
+            stage_started_at = time.perf_counter()
             outcome = await execution.execute_trade(
                 symbol=settings.symbol,
                 action=decision.action,
@@ -2635,6 +2716,7 @@ async def learning_loop(settings: Settings) -> None:
                 decision_reason=decision.reason,
                 dry_run=settings.dry_run,
             )
+            _mark_stage_timing(stage_ms, "execution_ms", stage_started_at)
 
             closed_positions = list(outcome.closes or ([] if outcome.close is None else [outcome.close]))
             if closed_positions:
@@ -2926,6 +3008,8 @@ async def learning_loop(settings: Settings) -> None:
                 perf_mon.tick_cycle_end()
                 perf_mon.maybe_log_summary_and_alerts()
 
+            _mark_stage_timing(stage_ms, "cycle_total_ms", cycle_started_at)
+            _log_stage_timing(settings, stage_ms)
             persist_runtime_state()
         except Exception as exc:
             log.exception("Loop cycle failed: %s", exc)

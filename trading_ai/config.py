@@ -538,6 +538,42 @@ class Settings(BaseSettings):
         validation_alias="MIN_TRADE_CONFIDENCE",
         description="Below this confidence, action is forced to HOLD after LLM response.",
     )
+    adaptive_confidence_floor_enabled: bool = Field(
+        default=True,
+        validation_alias="ADAPTIVE_CONFIDENCE_FLOOR_ENABLED",
+        description=(
+            "Dynamically loosen/tighten confidence floor based on live regime to reduce missed impulses "
+            "while staying conservative in low-quality structure."
+        ),
+    )
+    adaptive_confidence_floor_delta_strong: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=0.30,
+        validation_alias="ADAPTIVE_CONFIDENCE_FLOOR_DELTA_STRONG",
+        description="How much to lower confidence floor in strong directional conditions.",
+    )
+    adaptive_confidence_floor_delta_weak: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=0.30,
+        validation_alias="ADAPTIVE_CONFIDENCE_FLOOR_DELTA_WEAK",
+        description="How much to raise confidence floor in weak/ranging conditions.",
+    )
+    adaptive_confidence_floor_min: float = Field(
+        default=0.55,
+        ge=0.0,
+        le=1.0,
+        validation_alias="ADAPTIVE_CONFIDENCE_FLOOR_MIN",
+        description="Lower bound for dynamic confidence floor.",
+    )
+    adaptive_confidence_floor_max: float = Field(
+        default=0.80,
+        ge=0.0,
+        le=1.0,
+        validation_alias="ADAPTIVE_CONFIDENCE_FLOOR_MAX",
+        description="Upper bound for dynamic confidence floor.",
+    )
     entry_loss_streak_block: int = Field(
         default=3,
         validation_alias="ENTRY_LOSS_STREAK_BLOCK",
@@ -991,6 +1027,30 @@ class Settings(BaseSettings):
         validation_alias="PERFORMANCE_ALERT_MIN_LLM_INTENTS",
         ge=5,
         le=500_000,
+    )
+    performance_stage_telemetry_enabled: bool = Field(
+        default=True,
+        validation_alias="PERFORMANCE_STAGE_TELEMETRY_ENABLED",
+        description="Emit per-stage cycle timings to isolate real latency bottlenecks.",
+    )
+    performance_stage_warn_ms: float = Field(
+        default=1200.0,
+        validation_alias="PERFORMANCE_STAGE_WARN_MS",
+        ge=1.0,
+        le=120_000.0,
+        description="Warn when any individual stage exceeds this threshold (ms).",
+    )
+    performance_cycle_warn_ms: float = Field(
+        default=8000.0,
+        validation_alias="PERFORMANCE_CYCLE_WARN_MS",
+        ge=1.0,
+        le=300_000.0,
+        description="Warn when full cycle time exceeds this threshold (ms).",
+    )
+    performance_stage_log_every_cycle: bool = Field(
+        default=False,
+        validation_alias="PERFORMANCE_STAGE_LOG_EVERY_CYCLE",
+        description="If true, emit per-stage timings every cycle at INFO level (not only slow warnings).",
     )
 
     # --- API server (optional) ---

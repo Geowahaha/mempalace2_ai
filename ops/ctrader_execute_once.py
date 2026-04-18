@@ -899,7 +899,7 @@ def _workflow(mode: str, payload: dict):
                 })
                 return
             include_depth = bool(payload.get("include_depth", True))
-            duration_sec = max(3, _safe_int(payload.get("duration_sec"), 12))
+            duration_sec = max(1, _safe_int(payload.get("duration_sec"), 12))
             max_events = max(50, _safe_int(payload.get("max_events"), 600))
             resolved_symbols: list[dict] = []
             symbol_ids: list[int] = []

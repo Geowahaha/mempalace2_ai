@@ -99,6 +99,57 @@ class TradingAgent:
         self._llm = llm
         self._settings = settings
 
+    def _confidence_floor_for_features(
+        self,
+        *,
+        features: Dict[str, Any],
+        action: str = "",
+    ) -> float:
+        base = float(self._settings.min_trade_confidence)
+        if not bool(self._settings.adaptive_confidence_floor_enabled):
+            return base
+
+        trend = str(features.get("trend_direction") or "").upper()
+        volatility = str(features.get("volatility") or "").upper()
+        structure = dict(features.get("structure") or {})
+        trend_strength = float(features.get("trend_strength") or 0.0)
+        momentum_5 = float(features.get("momentum_5") or 0.0)
+        momentum_20 = float(features.get("momentum_20") or 0.0)
+
+        floor = base
+        strong_delta = float(self._settings.adaptive_confidence_floor_delta_strong)
+        weak_delta = float(self._settings.adaptive_confidence_floor_delta_weak)
+
+        side = str(action or "").upper()
+        alignment_ok = True
+        if side in ("BUY", "SELL"):
+            sign = 1.0 if side == "BUY" else -1.0
+            alignment_ok = (sign * momentum_5) > 0.0 and (sign * momentum_20) > -1e-6
+
+        strong_directional = (
+            trend in ("UP", "DOWN")
+            and volatility in ("MEDIUM", "HIGH")
+            and not bool(structure.get("consolidation"))
+            and trend_strength >= 5.0
+            and alignment_ok
+        )
+        weak_or_noisy = (
+            volatility == "LOW"
+            or trend == "RANGE"
+            or bool(structure.get("consolidation"))
+        )
+
+        if strong_directional:
+            floor = base - strong_delta
+        elif weak_or_noisy:
+            floor = base + weak_delta
+
+        floor = max(
+            float(self._settings.adaptive_confidence_floor_min),
+            min(float(self._settings.adaptive_confidence_floor_max), floor),
+        )
+        return float(floor)
+
     def _render_top_similar(self, hits: List[RecallHit], limit: int = 5) -> str:
         lines: List[str] = []
         for i, h in enumerate(hits[:limit], start=1):
@@ -303,7 +354,10 @@ class TradingAgent:
             ),
             raw={"fallback": True, "similar_bias": similar_bias},
         )
-        return apply_confidence_floor(decision, self._settings.min_trade_confidence)
+        return apply_confidence_floor(
+            decision,
+            self._confidence_floor_for_features(features=features, action=decision.action),
+        )
 
     async def decide(
         self,
@@ -350,7 +404,10 @@ class TradingAgent:
             decision = Decision.from_llm_payload(raw)
             if decision.raw.get("_invalid_action"):
                 raise ValueError(f"llm_invalid_action:{decision.raw.get('_invalid_action')}")
-            decision = apply_confidence_floor(decision, self._settings.min_trade_confidence)
+            decision = apply_confidence_floor(
+                decision,
+                self._confidence_floor_for_features(features=features, action=decision.action),
+            )
             log.info("Agent: %s conf=%.3f reason=%s", decision.action, decision.confidence, decision.reason[:200])
             return decision
         except Exception as exc:
