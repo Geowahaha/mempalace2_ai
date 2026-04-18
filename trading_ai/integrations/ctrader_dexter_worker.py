@@ -71,8 +71,8 @@ def _resolve_worker_python(settings: Settings, dexter_root: Path) -> str:
     if raw_python:
         p = Path(raw_python).expanduser()
         if p.is_file():
-            return str(p.resolve())
-        rel = (dexter_root / p).resolve()
+            return str(p)
+        rel = dexter_root / p
         if rel.is_file():
             return str(rel)
     search_roots = [
@@ -90,12 +90,12 @@ def _resolve_worker_python(settings: Settings, dexter_root: Path) -> str:
         for rel in rel_candidates:
             cand = root / rel
             if cand.is_file():
-                return str(cand.resolve())
+                return str(cand)
     for rel in rel_candidates:
         cand = dexter_root / rel
         if cand.is_file():
-            return str(cand.resolve())
-    return str(Path(sys.executable).resolve())
+            return str(cand)
+    return str(Path(sys.executable))
 
 
 def _to_float(value: Any) -> Optional[float]:
